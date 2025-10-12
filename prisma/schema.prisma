@@ -1,0 +1,577 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Admin model
+model Admin {
+  id        String   @id @default(uuid())
+  email     String?
+  phone     String?
+  firstName String
+  lastName  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  status    Status   @default(PENDING)
+
+  password String?
+
+  isPhoneVerified Boolean @default(false)
+  isEmailVerified Boolean @default(false)
+
+  image String?
+
+  // Relations
+  news News[]
+}
+
+// User model
+
+model User {
+  id        String   @id @default(uuid())
+  email     String?
+  phone     String?
+  firstName String
+  lastName  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  status    Status   @default(PENDING)
+
+  password        String?
+  address         String?
+  cityOfResidence String?
+
+
+  // Keep these for backward compatibility and easier access
+  latitude  Float?
+  longitude Float?
+
+  // Additional location metadata
+  country    String?
+  state      String?
+  city       String?
+  postalCode String?
+  timezone   String?
+
+  // Privacy settings for location
+  shareLocation      Boolean          @default(false)
+  locationAccuracy   LocationAccuracy @default(CITY) // EXACT, CITY, STATE, COUNTRY
+  lastLocationUpdate DateTime?
+
+  isPhoneVerified Boolean @default(false)
+  isEmailVerified Boolean @default(false)
+  isPasswordSet   Boolean @default(false)
+
+  authType AuthType @default(EMAIL)
+
+  image       String?
+  deviceToken String?
+
+  // Relations
+  posts             Post[]
+  likes             Like[]
+  comments          Comment[]
+  bookmarks         Bookmark[]
+  wallet            Wallet?
+  transactions      Transaction[]
+  cards             Cards[]
+  products          Product[]         @relation("productCreator")
+  purchasedProducts Product[]         @relation("productBuyer")
+  recycleSchedules  RecycleSchedule[]
+  orders            Order[]
+  notifications     Notification[]
+
+  settings Settings?
+
+  charityProductRequests CharityProductRequest[]
+  charityProducts        ChartProduct[]
+
+  // Relations
+  commentLikes     CommentLike[]
+  commentBookmarks CommentBookmark[]
+  commentReplies   CommentReply[]
+}
+
+// Notification model
+model Notification {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  title     String
+  body      String
+  image     String?
+  link      String?
+  isRead    Boolean  @default(false)
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Settings
+model Settings {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+
+  isEmailNotificationsEnabled Boolean @default(true)
+  isSmsNotificationsEnabled   Boolean @default(true)
+  isPushNotificationsEnabled  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// OTP models
+model Otp {
+  id         String   @id @default(uuid())
+  identifier String
+  token      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  status     Status
+}
+
+// Community models
+model Post {
+  id        String   @id @default(uuid())
+  body      String?  @default("")
+  images    String[] 
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  status    Status   @default(PUBLISHED)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  likes     Like[]
+  comments  Comment[]
+  bookmarks Bookmark[]
+
+  @@index([userId]) // Optimize queries filtering by user
+}
+
+// Like model
+model Like {
+  id        String   @id @default(uuid())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId]) // Prevent duplicate likes
+  @@index([postId]) // Faster post-like lookups
+  @@index([userId]) // Faster user-like lookups
+}
+
+model CommentLike {
+  id        String   @id @default(uuid())
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([commentId, userId]) // Prevent duplicate comment likes
+  @@index([commentId]) // Faster comment-like lookups
+  @@index([userId]) // Faster user-like lookups
+}
+
+model CommentBookmark {
+  id        String   @id @default(uuid())
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+}
+
+model CommentReply {
+  content   String
+  id        String   @id @default(uuid())
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  body      String
+  createdAt DateTime @default(now())
+
+  // Relations
+  likes     CommentLike[]
+  bookmarks CommentBookmark[]
+  replies   CommentReply[]
+
+  @@index([postId]) // Faster comment lookups per post
+  @@index([userId]) // Faster retrieval of user comments
+}
+
+// Bookmark model
+model Bookmark {
+  id        String   @id @default(uuid())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId]) // Prevent duplicate bookmarks
+  @@index([postId]) // Optimize post bookmark queries
+  @@index([userId]) // Optimize user bookmark queries
+}
+
+// Wallet model
+model Wallet {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  balance   Float    @default(0)
+  currency  Currency @default(EUR)
+  status    Status   @default(VERIFIED)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  transactions Transaction[]
+
+  @@unique([userId])
+}
+
+// Transaction model
+model Transaction {
+  id        String          @id @default(uuid())
+  wallet    Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  walletId  String
+  amount    Float
+  type      TransactionType
+  status    Status          @default(PENDING)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  balanceBefore Float
+  balanceAfter  Float
+  fee           Float
+  reference     String
+  description   String
+  metadata      Json?
+
+  @@index([walletId])
+  @@index([userId])
+}
+
+model Cards {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  cardId    String
+  cardToken String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cardType CardType
+  currency Currency
+
+  // Card Details
+  isPrimary Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  nameOnCard   String
+  last4Digits  String
+  first6Digits String
+  expiryDate   String
+}
+
+// Product model
+model Product {
+  id          String    @id @default(uuid())
+  title       String
+  description String
+  price       Float?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  soldAt      DateTime?
+  confirmedAt DateTime?
+
+  createdBy User   @relation("productCreator", fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  soldTo   User?   @relation("productBuyer", fields: [soldToId], references: [id], onDelete: Cascade)
+  soldToId String?
+
+  type     ProductType @default(SALES_PRODUCT)
+  status   Status      @default(PUBLISHED)
+  isSold   Boolean     @default(false)
+  material String
+  images   String[]
+
+  currency Currency @default(NGN)
+
+  // Charity Product Request
+  charityProductRequest CharityProductRequest[]
+  charityProduct        ChartProduct[]
+
+  orders Order[]
+
+  @@index([userId]) // Optimize queries filtering by user
+}
+
+model ChartProduct {
+  id        String   @id @default(uuid())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CharityProductRequest {
+  id        String   @id @default(uuid())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  status    Status   @default(PENDING)
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  facility  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  rating    Float
+  comment   String
+}
+
+model Facility {
+  id                String   @id @unique
+  name              String
+  profilePhoto      String
+  address           String?
+  rating            Int
+  workingDays       String[]
+  materialUnitPrice Json[]
+  distanceInMiles   Float
+}
+
+model Material {
+  id       String @id @default(uuid())
+  category String
+  icon     String
+}
+
+// Recycle Schedule model
+model RecycleSchedule {
+  id            String   @id @default(uuid())
+  transactionId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  type RecycleScheduleType
+
+  dates DateTime[]
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  facility String
+  material String
+  quantity Int?   @default(1)
+
+  status RecycleScheduleStatus @default(PENDING)
+}
+
+// Recycle Chat model
+
+model RecycleChat {
+  id            String               @id @default(uuid())
+  chatID        String
+  createdBy     String
+  withUser      String
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  type          RecycleChatType
+  messages      RecycleChatMessage[] @relation("ChatMessages")
+  lastMessage   RecycleChatMessage?  @relation("LastMessage", fields: [lastMessageID], references: [id])
+  lastMessageID String?              @unique
+}
+
+model RecycleChatMessage {
+  id                    String                  @id @default(uuid())
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  readBy                String[]
+  message               String
+  senderID              String
+  recycleChat           RecycleChat             @relation("ChatMessages", fields: [recycleChatId], references: [id], onDelete: Cascade)
+  recycleChatId         String
+  attachment            String?
+  lastMessageFor        RecycleChat?            @relation("LastMessage")
+  lastMessageForId      String? // No @unique here!
+  RecycleChatAttachment RecycleChatAttachment[]
+}
+
+model RecycleChatAttachment {
+  id        String                    @id @default(uuid())
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+  message   RecycleChatMessage        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String
+  url       String
+  type      RecycleChatAttachmentType
+}
+
+enum RecycleChatAttachmentType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+}
+
+enum RecycleScheduleType {
+  PICKUP
+  DROP_OFF
+}
+
+enum RecycleChatType {
+  WITH_FACILITY
+  WITH_SELLER
+}
+
+enum RecycleScheduleStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// Supporting enums
+enum LocationAccuracy {
+  EXACT
+  CITY
+  STATE
+  COUNTRY
+}
+
+enum RecyclerScheduleReminder {
+  IN_1_WEEK
+  IN_3_DAYS
+  IN_2_WEEKS
+  IN_1_HOURS
+  IN_1_MONTH
+  IN_15_MINUTES
+}
+
+// Transaction type enum
+
+enum TransactionType {
+  WITHDRAWAL
+  TRANSFER
+  CHARITY
+  TOPUP
+  PAYMENT
+  REFUND
+  OTHER
+}
+
+enum FacilityDays {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+// Card Type enum
+enum CardType {
+  VISA
+  MASTERCARD
+  AMERICAN_EXPRESS
+  VERVE
+}
+
+// Product Type enum
+enum ProductType {
+  CHARITY_PRODUCT
+  SALES_PRODUCT
+}
+
+// News model
+model News {
+  id        String   @id @default(uuid())
+  title     String
+  body      String
+  media     Json[]
+  status    Status   @default(PUBLISHED)
+  createdBy Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  adminId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([adminId]) // Optimize queries filtering by admin
+}
+
+// Order model
+model Order {
+  id        String   @id @default(uuid())
+  reference String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  status Status @default(PENDING)
+
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  address String
+}
+
+// Status enum
+enum Status {
+  DRAFT
+  DELETED
+  PUBLISHED
+
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  VERIFIED
+  COMPLETED
+}
+
+// Currency enum
+enum Currency {
+  NGN
+  USD
+  EUR
+  GBP
+}
+
+// AuthType enum
+enum AuthType {
+  EMAIL
+  GOOGLE
+}
