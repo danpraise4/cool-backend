@@ -20,7 +20,28 @@ const server = http.createServer(app);
 RedisService.getInstance();
 RedisService.instance.checkConnection();
 
-const io = new Server(server);
+// Configure Socket.IO with proper CORS and transport options
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Allow all origins for external users
+    methods: ["GET", "POST"],
+    allowedHeaders: ["*"],
+    credentials: true
+  },
+  transports: ["websocket", "polling"], // Enable both WebSocket and polling
+  allowEIO3: true, // Allow Engine.IO v3 clients
+  pingTimeout: 60000, // 60 seconds
+  pingInterval: 25000, // 25 seconds
+  upgradeTimeout: 10000, // 10 seconds
+  maxHttpBufferSize: 1e6, // 1MB
+  allowUpgrades: true,
+  perMessageDeflate: {
+    threshold: 1024,
+    concurrencyLimit: 10,
+    memLevel: 7
+  }
+});
+
 io.use(socketUserMiddleware);
 WS.getInstance(io);
 

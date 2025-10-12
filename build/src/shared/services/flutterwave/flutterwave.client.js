@@ -1,0 +1,22 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const flutterwave_1 = __importDefault(require("./flutterwave"));
+class FlutterwaveClient {
+    publicKey;
+    secretKey;
+    initialize(publicKey, secretKey) {
+        this.publicKey = publicKey;
+        this.secretKey = secretKey;
+        return this;
+    }
+    build() {
+        return new flutterwave_1.default({
+            publicKey: this.publicKey,
+            secretKey: this.secretKey,
+        });
+    }
+}
+exports.default = FlutterwaveClient;

@@ -68,6 +68,15 @@ app.get('/', (_req, res) => {
   res.send(`<b>Welcome to ${config.APP_NAME}</b>`);
 });
 
+// Socket.IO health check endpoint
+app.get('/socket.io/health', (_req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'Socket.IO server is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // v1 Routes
 app.use('/api/v1', router);
 app.all('*', (req: Request, _res: Response, next: NextFunction) => {

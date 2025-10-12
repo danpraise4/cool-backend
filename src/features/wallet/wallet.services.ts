@@ -158,7 +158,6 @@ export class WalletService {
     account_number,
     bank_name,
     account_name,
-    routing_number,
     swift_code,
   }: {
     user: User;
@@ -166,7 +165,6 @@ export class WalletService {
     account_number: string;
     bank_name: string;
     account_name: string;
-    routing_number: string;
     swift_code: string;
   }) {
 
@@ -201,7 +199,7 @@ export class WalletService {
         "meta": [
           {
             "account_number": account_number,
-            "routing_number": routing_number,
+            "routing_number": swift_code,
             "swift_code": swift_code,
             "bank_name": bank_name,
             "beneficiary_name": account_name,

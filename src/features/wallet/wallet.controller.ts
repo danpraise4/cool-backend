@@ -127,7 +127,7 @@ export default class WalletController {
     next: NextFunction
   ) => {
     try {
-      const { amount, account_number, bank_name, account_name, routing_number, swift_code } = req.body;
+      const { amount, account_number, bank_name, account_name, swift_code } = req.body;
 
       const transaction = await this.walletService.transferToBankUKUser({
         user: req.user,
@@ -135,7 +135,6 @@ export default class WalletController {
         account_number,
         bank_name,
         account_name,
-        routing_number,
         swift_code,
       });
       res.status(httpStatus.OK).json({

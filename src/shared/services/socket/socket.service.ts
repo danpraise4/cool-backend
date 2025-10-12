@@ -26,27 +26,45 @@ export default class WS {
       WS_EVENT.CONNECTION,
       async (socket: Socket<DefaultEventsMap>) => {
         console.log("New client connected:", socket.id);
+        console.log("Client origin:", socket.handshake.headers.origin);
+        console.log("Client user agent:", socket.handshake.headers['user-agent']);
+        
         const { User } = socket.handshake.query;
         const userId = User as string;
 
-        // Clean up any previous socket for this user
-        const user_previous_socket = await RedisService.instance.getUserSocket(
-          userId
-        );
-        if (user_previous_socket) {
-          await RedisService.instance.delete(userId);
+        try {
+          // Clean up any previous socket for this user
+          const user_previous_socket = await RedisService.instance.getUserSocket(
+            userId
+          );
+          if (user_previous_socket) {
+            await RedisService.instance.delete(userId);
+          }
+
+          // Store new socket mapping
+          await RedisService.instance.set(userId, socket.id);
+
+          this.setupEventHandlers(socket);
+          socket.emit(WS_EVENT.CONNECTION, { 
+            message: "Connected to socket",
+            socketId: socket.id,
+            userId: userId
+          });
+
+          console.log(`User ${userId} successfully connected with socket ${socket.id}`);
+        } catch (error) {
+          console.error("Error setting up socket connection:", error);
+          socket.emit("error", { message: "Failed to establish connection" });
         }
 
-        // Store new socket mapping
-        await RedisService.instance.set(userId, socket.id);
-
-        this.setupEventHandlers(socket);
-        socket.emit(WS_EVENT.CONNECTION, { message: "Connected to socket" });
-
         // Handle disconnection
-        socket.on("disconnect", async () => {
-          console.log(`Socket ${socket.id} disconnected`);
-          await RedisService.instance.delete(userId);
+        socket.on("disconnect", async (reason) => {
+          console.log(`Socket ${socket.id} disconnected. Reason: ${reason}`);
+          try {
+            await RedisService.instance.delete(userId);
+          } catch (error) {
+            console.error("Error cleaning up socket on disconnect:", error);
+          }
         });
 
         // Handle chat join
@@ -177,6 +195,24 @@ export default class WS {
       userId: socket.handshake.query.User,
     }));
   }
+
+  // Get connection statistics
+  getConnectionStats() {
+    return {
+      connectedClients: this.io.engine.clientsCount,
+      totalConnections: this.io.sockets.sockets.size,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  // Test connection method for external users
+  testConnection() {
+    this.io.emit('connection_test', {
+      message: 'Socket.IO server is working',
+      timestamp: new Date().toISOString(),
+      serverTime: Date.now()
+    });
+  }
 }
 
 export async function socketUserMiddleware(
@@ -187,11 +223,12 @@ export async function socketUserMiddleware(
     let { user } = socket.handshake.query;
     user = user as string;
 
+    // Allow anonymous connections for external users
     if (!user) {
-      throw new Error("User ID must be provided");
+      // Generate a temporary user ID for anonymous connections
+      user = `anonymous_${socket.id}`;
+      console.log(`Anonymous user connected with socket ${socket.id}`);
     }
-
-  
 
     socket.handshake.query.User = user;
     console.log(`User ${user} authenticated for socket ${socket.id}`);
