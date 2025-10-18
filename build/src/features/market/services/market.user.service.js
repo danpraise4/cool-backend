@@ -771,9 +771,9 @@ class MarketUserService {
         if (order.user.id !== userId) {
             throw new Error("You are not authorized to confirm this order");
         }
-        if (order.product.isSold) {
-            throw new Error("Product is already confirmed");
-        }
+        // if (order.product.isSold) {
+        //   throw new Error("Product is already confirmed");
+        // }
     }
     async refundPendingOrders(productId, productPrice) {
         const pendingOrders = await connect_1.default.order.findMany({

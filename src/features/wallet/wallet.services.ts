@@ -152,6 +152,15 @@ export class WalletService {
     return response;
   }
 
+  public async resolveUK(body: {
+    number: string;
+    name: string;
+    code: string;
+  }) {
+    const response = await this.FlutterwaveClient.resolveUK(body);
+    return response;
+  }
+
   public async transferToBankUKUser({
     user,
     amount,

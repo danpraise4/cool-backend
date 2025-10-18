@@ -51,6 +51,23 @@ export default class Flutterwave extends FlutterwaveUtil {
     }
   }
 
+  async resolveUK(data: {
+    [key: string]: any;
+  }): Promise<IFlutterwaveBaseResponse<any>> {
+    try {
+      const response = await this.postRequest<
+        { [key: string]: any },
+        IFlutterwaveBaseResponse<any>
+      >(this.buildHeader(), data, `${endpoints.RESOLVE_UK}`, "https://api.flutterwave.com/"
+      );
+      console.log(response);
+      return response;
+    } catch (err: unknown) {
+      console.log(err);
+      throw new Error(err as string);
+    }
+  }
+
   // Transfer to Bank
   async transferToBank(data: {
     [key: string]: any;

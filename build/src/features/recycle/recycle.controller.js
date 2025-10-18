@@ -27,6 +27,22 @@ class RecycleController {
             return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
         }
     };
+    createRecycleScheduleReminder = async (req, res, next) => {
+        try {
+            const reminder = await this.recycleService.createRecycleScheduleReminder({
+                userId: req.user.id,
+                scheduleid: req.body.scheduleid,
+            });
+            res.status(http_status_1.default.OK).json({
+                message: "Reminder created successfully",
+                status: "success",
+                data: reminder,
+            });
+        }
+        catch (error) {
+            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+        }
+    };
     getRecycleScheduleByTransactionId = async (req, res, next) => {
         try {
             const schedule = await this.recycleService.getRecycleScheduleByTransactionId({

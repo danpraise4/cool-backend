@@ -925,9 +925,9 @@ class MarketUserService {
       throw new Error("You are not authorized to confirm this order");
     }
 
-    if (order.product.isSold) {
-      throw new Error("Product is already confirmed");
-    }
+    // if (order.product.isSold) {
+    //   throw new Error("Product is already confirmed");
+    // }
   }
 
   private async refundPendingOrders(productId: string, productPrice: number): Promise<void> {

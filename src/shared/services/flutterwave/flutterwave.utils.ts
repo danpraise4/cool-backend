@@ -33,10 +33,9 @@ export default class FlutterwaveUtil {
       Authorization: `Bearer ${this.secretKey}`,
     };
   }
-  async postRequest<T, K>(headers: ObjT, jsonData: T, url: string): Promise<K> {
+  async postRequest<T, K>(headers: ObjT, jsonData: T, url: string , baseUL?: string): Promise<K> {
 
-    console.log(`${baseUrl}${url}`);
-    const data = await fetch(`${baseUrl}${url}`, {
+    const data = await fetch(`${baseUL || baseUrl}${url}`, {
       method: "POST",
       headers,
       body: JSON.stringify(jsonData),
@@ -44,6 +43,8 @@ export default class FlutterwaveUtil {
     });
 
     const respStr = await data.text();
+
+    console.log(respStr);
     let resp;
     try {
       resp = JSON.parse(respStr);

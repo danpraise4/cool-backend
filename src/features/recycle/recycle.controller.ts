@@ -5,6 +5,7 @@ import { RecycleService } from "./recycle.services";
 import AppException from "../../infastructure/https/exception/app.exception";
 import httpStatus from "http-status";
 
+
 export class RecycleController {
   constructor(private readonly recycleService: RecycleService) { }
 
@@ -29,6 +30,31 @@ export class RecycleController {
       );
     }
   };
+
+  public createRecycleScheduleReminder = async (
+
+    req: RequestType,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const reminder = await this.recycleService.createRecycleScheduleReminder({
+        userId: req.user.id,
+        scheduleid: req.body.scheduleid,
+      });
+
+      res.status(StatusCodes.OK).json({
+        message: "Reminder created successfully",
+        status: "success",
+        data: reminder,
+      });
+    } catch (error: any) {
+      return next(
+        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
+      );
+    }
+  };
+
 
   public getRecycleScheduleByTransactionId = async (
     req: RequestType,

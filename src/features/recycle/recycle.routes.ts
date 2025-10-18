@@ -50,6 +50,10 @@ router
   );
 
 router
+  .route("/schedule-reminders")
+  .post(isUserAuthenticated, recycleController.createRecycleScheduleReminder);
+
+router
   .route("/top-recyclers")
   .get(isUserAuthenticated, recycleController.getTopRecyclers);
 

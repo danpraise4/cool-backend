@@ -40,6 +40,17 @@ class Flutterwave extends flutterwave_utils_1.default {
             throw new Error(err);
         }
     }
+    async resolveUK(data) {
+        try {
+            const response = await this.postRequest(this.buildHeader(), data, `${flutterwave_endpoints_1.endpoints.RESOLVE_UK}`, "https://api.flutterwave.com/");
+            console.log(response);
+            return response;
+        }
+        catch (err) {
+            console.log(err);
+            throw new Error(err);
+        }
+    }
     // Transfer to Bank
     async transferToBank(data) {
         try {

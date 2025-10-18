@@ -179,7 +179,7 @@ export class RecycleService {
     const material = await this.AdminClient.getMaterialById(
       schedule.material
     );
-     
+
     console.log("schedule", schedule);
 
     if (!schedule) {
@@ -203,6 +203,58 @@ export class RecycleService {
     return payload;
   }
 
+  public async createRecycleScheduleReminder(config: { userId: string, scheduleid: string, remindAt?: Date }) {
+    const findSchedule = await prismaClient.recycleSchedule.findUnique({
+      where: { id: config.scheduleid },
+      include: {
+        reminders: true,
+      }
+    });
+
+    if (!findSchedule) {
+      throw new Error('Schedule not found');
+    }
+
+    if (findSchedule.reminders.length > 0) {
+      throw new Error('Reminder already exists');
+    }
+
+    // Get the first scheduled date
+    const scheduleDate = findSchedule.dates[0];
+    if (!scheduleDate) {
+      throw new Error('No scheduled date found');
+    }
+
+    // Create reminder for 3PM the day before
+    const dayBeforeReminder = new Date(scheduleDate);
+    dayBeforeReminder.setDate(dayBeforeReminder.getDate() - 1);
+    dayBeforeReminder.setHours(15, 0, 0, 0); // 3PM
+
+    // Create reminder for 7AM on schedule day
+    const scheduleDayReminder = new Date(scheduleDate);
+    scheduleDayReminder.setHours(7, 0, 0, 0); // 7AM
+
+    // Create both reminders
+    const reminders = await Promise.all([
+      prismaClient.recycleReminder.create({
+        data: {
+          userId: config.userId,
+          scheduleId: config.scheduleid,
+          remindAt: dayBeforeReminder
+        }
+      }),
+      prismaClient.recycleReminder.create({
+        data: {
+          userId: config.userId,
+          scheduleId: config.scheduleid,
+          remindAt: scheduleDayReminder
+        }
+      })
+    ]);
+
+    return reminders;
+  }
+
   public async deleteRecycleSchedule(config: { id: string; userId: string }) {
     const deletedSchedule = await prismaClient.recycleSchedule.delete({
       where: { id: config.id, userId: config.userId },
@@ -215,6 +267,9 @@ export class RecycleService {
   public async getRecycleSchedule(config: { id: string; userId: string }) {
     const schedule = await prismaClient.recycleSchedule.findFirst({
       where: { id: config.id, userId: config.userId },
+      include: {
+        reminders: true
+      }
     });
 
     if (!schedule) {
@@ -230,6 +285,9 @@ export class RecycleService {
 
     const schedules = await prismaClient.recycleSchedule.findMany({
       where: { userId: config.userId, dates: { has: date } },
+      include: {
+        reminders: true
+      }
     });
 
     // Map schedules to fetch facility details from API

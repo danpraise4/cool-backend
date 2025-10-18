@@ -30,6 +30,10 @@ router.route("/transfer-to-bank").post(isUserAuthenticated, walletController.tra
 // Transfer to Bank UK User
 router.route("/transfer-to-bank-uk-user").post(isUserAuthenticated, walletController.transferToBankUKUser);
 
+
+// Resolve UK 
+router.route("/resolve-uk").post(isUserAuthenticated, walletController.resolveUK);
+
 // Top up Bank
 router.route("/topup-bank").post(isUserAuthenticated, walletController.topupBank);
 

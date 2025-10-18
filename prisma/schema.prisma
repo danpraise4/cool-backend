@@ -45,7 +45,6 @@ model User {
   address         String?
   cityOfResidence String?
 
-
   // Keep these for backward compatibility and easier access
   latitude  Float?
   longitude Float?
@@ -94,6 +93,8 @@ model User {
   commentLikes     CommentLike[]
   commentBookmarks CommentBookmark[]
   commentReplies   CommentReply[]
+
+  recycleReminders RecycleReminder[]
 }
 
 // Notification model
@@ -140,7 +141,7 @@ model Otp {
 model Post {
   id        String   @id @default(uuid())
   body      String?  @default("")
-  images    String[] 
+  images    String[]
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   status    Status   @default(PUBLISHED)
@@ -396,7 +397,24 @@ model RecycleSchedule {
   material String
   quantity Int?   @default(1)
 
-  status RecycleScheduleStatus @default(PENDING)
+  status    RecycleScheduleStatus @default(PENDING)
+  reminders RecycleReminder[]
+}
+
+// Recycle Reminder model
+model RecycleReminder {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  remindAt  DateTime?
+
+  status Status @default(PENDING)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  schedule   RecycleSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  scheduleId String
 }
 
 // Recycle Chat model
@@ -468,15 +486,6 @@ enum LocationAccuracy {
   CITY
   STATE
   COUNTRY
-}
-
-enum RecyclerScheduleReminder {
-  IN_1_WEEK
-  IN_3_DAYS
-  IN_2_WEEKS
-  IN_1_HOURS
-  IN_1_MONTH
-  IN_15_MINUTES
 }
 
 // Transaction type enum
@@ -553,7 +562,6 @@ enum Status {
   DRAFT
   DELETED
   PUBLISHED
-
   PENDING
   APPROVED
   REJECTED

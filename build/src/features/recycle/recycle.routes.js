@@ -32,6 +32,9 @@ router
     .route("/admin/chats/initiate")
     .post((0, app_validate_1.default)(recycle_validator_1.adminChatValidator), controller_module_1.recycleController.initiateAdminRecycleChat);
 router
+    .route("/schedule-reminders")
+    .post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.recycleController.createRecycleScheduleReminder);
+router
     .route("/top-recyclers")
     .get(auth_user_middleware_1.isUserAuthenticated, controller_module_1.recycleController.getTopRecyclers);
 router

@@ -121,6 +121,25 @@ export default class WalletController {
     }
   };
 
+  public resolveUK = async (
+    req: RequestType,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const uk = await this.walletService.resolveUK(req.body);
+      res.status(httpStatus.OK).json({
+        message: "UK resolved successfully",
+        status: "success",
+        data: uk,
+      });
+    } catch (error: any) {
+      return next(
+        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
+      );
+    }
+  };
+
   public transferToBankUKUser = async (
     req: RequestType,
     res: Response,

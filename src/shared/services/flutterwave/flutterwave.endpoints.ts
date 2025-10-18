@@ -6,6 +6,7 @@ const endpoints = Object.freeze({
   BANKS: (country: string): string => `/banks/${country}`,
   BANK_ACCOUNT_DETAILS: `/accounts/resolve`,
   TRANSFER_TO_BANK: `/transfers`,
+  RESOLVE_UK: `/banks/account-resolve`,
 });
 
 export { baseUrl, endpoints };

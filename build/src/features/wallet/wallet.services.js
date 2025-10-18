@@ -130,6 +130,10 @@ class WalletService {
         });
         return response;
     }
+    async resolveUK(body) {
+        const response = await this.FlutterwaveClient.resolveUK(body);
+        return response;
+    }
     async transferToBankUKUser({ user, amount, account_number, bank_name, account_name, swift_code, }) {
         // Get user's wallet
         const wallet = await connect_1.default.wallet.findUnique({

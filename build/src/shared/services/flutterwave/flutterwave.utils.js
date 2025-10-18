@@ -26,15 +26,15 @@ class FlutterwaveUtil {
             Authorization: `Bearer ${this.secretKey}`,
         };
     }
-    async postRequest(headers, jsonData, url) {
-        console.log(`${flutterwave_endpoints_1.baseUrl}${url}`);
-        const data = await (0, node_fetch_1.default)(`${flutterwave_endpoints_1.baseUrl}${url}`, {
+    async postRequest(headers, jsonData, url, baseUL) {
+        const data = await (0, node_fetch_1.default)(`${baseUL || flutterwave_endpoints_1.baseUrl}${url}`, {
             method: "POST",
             headers,
             body: JSON.stringify(jsonData),
             timeout: 10000,
         });
         const respStr = await data.text();
+        console.log(respStr);
         let resp;
         try {
             resp = JSON.parse(respStr);

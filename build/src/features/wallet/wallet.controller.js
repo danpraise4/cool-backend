@@ -87,6 +87,19 @@ class WalletController {
             return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
         }
     };
+    resolveUK = async (req, res, next) => {
+        try {
+            const uk = await this.walletService.resolveUK(req.body);
+            res.status(http_status_1.default.OK).json({
+                message: "UK resolved successfully",
+                status: "success",
+                data: uk,
+            });
+        }
+        catch (error) {
+            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+        }
+    };
     transferToBankUKUser = async (req, res, next) => {
         try {
             const { amount, account_number, bank_name, account_name, swift_code } = req.body;

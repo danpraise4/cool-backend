@@ -143,6 +143,50 @@ class RecycleService {
         console.log("payload", payload);
         return payload;
     }
+    async createRecycleScheduleReminder(config) {
+        const findSchedule = await connect_1.default.recycleSchedule.findUnique({
+            where: { id: config.scheduleid },
+            include: {
+                reminders: true,
+            }
+        });
+        if (!findSchedule) {
+            throw new Error('Schedule not found');
+        }
+        if (findSchedule.reminders.length > 0) {
+            throw new Error('Reminder already exists');
+        }
+        // Get the first scheduled date
+        const scheduleDate = findSchedule.dates[0];
+        if (!scheduleDate) {
+            throw new Error('No scheduled date found');
+        }
+        // Create reminder for 3PM the day before
+        const dayBeforeReminder = new Date(scheduleDate);
+        dayBeforeReminder.setDate(dayBeforeReminder.getDate() - 1);
+        dayBeforeReminder.setHours(15, 0, 0, 0); // 3PM
+        // Create reminder for 7AM on schedule day
+        const scheduleDayReminder = new Date(scheduleDate);
+        scheduleDayReminder.setHours(7, 0, 0, 0); // 7AM
+        // Create both reminders
+        const reminders = await Promise.all([
+            connect_1.default.recycleReminder.create({
+                data: {
+                    userId: config.userId,
+                    scheduleId: config.scheduleid,
+                    remindAt: dayBeforeReminder
+                }
+            }),
+            connect_1.default.recycleReminder.create({
+                data: {
+                    userId: config.userId,
+                    scheduleId: config.scheduleid,
+                    remindAt: scheduleDayReminder
+                }
+            })
+        ]);
+        return reminders;
+    }
     async deleteRecycleSchedule(config) {
         const deletedSchedule = await connect_1.default.recycleSchedule.delete({
             where: { id: config.id, userId: config.userId },
@@ -153,6 +197,9 @@ class RecycleService {
     async getRecycleSchedule(config) {
         const schedule = await connect_1.default.recycleSchedule.findFirst({
             where: { id: config.id, userId: config.userId },
+            include: {
+                reminders: true
+            }
         });
         if (!schedule) {
             throw new Error("Schedule not found");
@@ -164,6 +211,9 @@ class RecycleService {
         const date = helper_1.Helper.toDate(config.date);
         const schedules = await connect_1.default.recycleSchedule.findMany({
             where: { userId: config.userId, dates: { has: date } },
+            include: {
+                reminders: true
+            }
         });
         // Map schedules to fetch facility details from API
         const schedulesWithFacilities = await Promise.all(schedules.map(async (schedule) => {

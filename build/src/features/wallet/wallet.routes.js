@@ -26,6 +26,8 @@ router.route("/bank-account").post(auth_user_middleware_1.isUserAuthenticated, c
 router.route("/transfer-to-bank").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.transferToBank);
 // Transfer to Bank UK User
 router.route("/transfer-to-bank-uk-user").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.transferToBankUKUser);
+// Resolve UK 
+router.route("/resolve-uk").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.resolveUK);
 // Top up Bank
 router.route("/topup-bank").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.topupBank);
 // Credit User Wallet
