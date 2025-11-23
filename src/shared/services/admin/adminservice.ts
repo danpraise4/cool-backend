@@ -116,37 +116,37 @@ export default class AdminService extends AdminServiceUtil {
   }
 
   ///
-    // Get facility by id
-    async getFacilityByItsID(id: string): Promise<IAdminServiceFacilityById> {
-      try {
- 
-        console.log("Got here 5");
-        /// ----
-        const response = await this.getRequest<IAdminServiceFacilityById>(
-          this.buildHeader(),
-          endpoints.GET_FACILITY_BY_ID(id)
+  // Get facility by id
+  async getFacilityByItsID(id: string): Promise<IAdminServiceFacilityById> {
+    try {
+
+      console.log("Got here 5");
+      /// ----
+      const response = await this.getRequest<IAdminServiceFacilityById>(
+        this.buildHeader(),
+        endpoints.GET_FACILITY_BY_ID(id)
+      );
+
+      console.log("Response ------- ");
+      console.log(response);
+
+      if (response.isOk) {
+        await RedisService.instance.set(
+          `facility:${id}`,
+          JSON.stringify(response.payload)
         );
-  
-        console.log("Response ------- ");
-        console.log(response);
-  
-        if (response.isOk) {
-          await RedisService.instance.set(
-            `facility:${id}`,
-            JSON.stringify(response.payload)
-          );
-          return response;
-        } else {
-          throw new Error(response.message);
-        }
-      } catch (err: unknown) {
-        console.log(err);
-        if (err instanceof Error) {
-          throw new Error(err.message);
-        }
-        throw new Error(err as string);
+        return response;
+      } else {
+        throw new Error(response.message);
       }
+    } catch (err: unknown) {
+      console.log(err);
+      if (err instanceof Error) {
+        throw new Error(err.message);
+      }
+      throw new Error(err as string);
     }
+  }
 
   // Get material categories
   async getMaterial(): Promise<IAdminServiceMaterials> {
@@ -292,9 +292,34 @@ export default class AdminService extends AdminServiceUtil {
     }
   }
 
-  async getRecycleRequestById(config: {recyclerId: string, transactionId: string}): Promise<AdminServiceBaseResponse<any>> {
+  // Confirm recycle transaction
+  async confirmRecycleTransaction(
+    id: string,
+    request: any
+  ): Promise<AdminServiceBaseResponse<any>> {
     try {
-    
+      const response = await this.postRequest<
+        any,
+        AdminServiceBaseResponse<any>
+      >(this.buildHeader(), request, `${endpoints.CONFIRM_RECYCLE_TRANSACTION(id)}`);
+
+
+      if (response.isOk) {
+        return response;
+      } else {
+        throw new Error(response.message);
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        throw new Error(err.message);
+      }
+      throw new Error(err as string);
+    }
+  }
+
+  async getRecycleRequestById(config: { recyclerId: string, transactionId: string }): Promise<AdminServiceBaseResponse<any>> {
+    try {
+
 
       const response = await this.getRequest<any>(
         this.buildHeader(),
@@ -305,7 +330,7 @@ export default class AdminService extends AdminServiceUtil {
       console.log(response);
 
       if (response.isOk) {
-        return response;  
+        return response;
       } else {
         throw new Error(response.message);
       }

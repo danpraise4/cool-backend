@@ -424,6 +424,8 @@ model RecycleChat {
   chatID        String
   createdBy     String
   withUser      String
+  name          String?
+  profilePhoto  String?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
   type          RecycleChatType

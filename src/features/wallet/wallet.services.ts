@@ -5,10 +5,12 @@ import config from "../../shared/config/app.config";
 import Flutterwave from "../../shared/services/flutterwave/flutterwave";
 import TokenService from "../../shared/services/token.service";
 import { ICard } from "./wallet.interface";
+import AdminService from "../../shared/services/admin/adminservice";
 
 export class WalletService {
   FlutterwaveClient: Flutterwave;
   tokenService: TokenService;
+  AdminServiceClient: AdminService;
   constructor() {
     this.tokenService = new TokenService();
     const flutterwaveClient = new FlutterwaveClient().initialize(
@@ -23,6 +25,16 @@ export class WalletService {
 
     if (event === "charge.completed") {
       const { tx_ref } = data;
+
+      try {
+        this.AdminServiceClient.confirmRecycleTransaction(data.flw_ref, {
+          ...data,
+        });
+      } catch (error: any) {
+        // Do nothing 
+      }
+
+
       // find the originator of the transaction
       const account = await prisma.wallet.findUnique({
         where: {
