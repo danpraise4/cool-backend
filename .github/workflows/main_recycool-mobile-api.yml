@@ -52,4 +52,5 @@ jobs:
           app-name: 'recycool-mobile-api'
           slot-name: 'Production'
           package: .
+
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_4D415BD86ACB4AE7A40F1926055E15F0 }}
