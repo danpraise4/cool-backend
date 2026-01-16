@@ -67,7 +67,8 @@ export default class AdminService extends AdminServiceUtil {
         if (facility) {
           await RedisService.instance.set(
             `facility:${id}`,
-            JSON.stringify(facility)
+            JSON.stringify(facility),
+            3600 // 1 hour TTL
           );
           return {
             isOk: true,
@@ -100,7 +101,8 @@ export default class AdminService extends AdminServiceUtil {
       if (response.isOk) {
         await RedisService.instance.set(
           `facility:${id}`,
-          JSON.stringify(response.payload)
+          JSON.stringify(response.payload),
+          3600 // 1 hour TTL
         );
         return response;
       } else {
@@ -133,7 +135,8 @@ export default class AdminService extends AdminServiceUtil {
       if (response.isOk) {
         await RedisService.instance.set(
           `facility:${id}`,
-          JSON.stringify(response.payload)
+          JSON.stringify(response.payload),
+          3600 // 1 hour TTL
         );
         return response;
       } else {
@@ -192,7 +195,8 @@ export default class AdminService extends AdminServiceUtil {
         if (material) {
           await RedisService.instance.set(
             `material:${id}`,
-            JSON.stringify(material)
+            JSON.stringify(material),
+            3600 // 1 hour TTL
           );
           return {
             isOk: true,

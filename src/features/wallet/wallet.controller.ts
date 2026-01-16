@@ -213,7 +213,6 @@ export default class WalletController {
   };
 
 
-
   public creditUserWallet = async (
     req: RequestType,
     res: Response,

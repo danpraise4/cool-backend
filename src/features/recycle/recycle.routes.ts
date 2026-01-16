@@ -32,7 +32,16 @@ router
   .route("/facility-data/:id")
   .get(isUserAuthenticated, recycleController.getRecycleFacilityData);
 
-router.route("/admin/chats/:id").get(recycleController.getFacilityChatById);
+router
+  .route("/admin/chats/initiate")
+  .post(
+    validate(adminChatValidator),
+    recycleController.initiateAdminRecycleChat
+  );
+
+router
+  .route("/admin/chats/:id")
+  .get(recycleController.getFacilityChatById);
 
 router
   .route("/chats/initiate")
@@ -41,13 +50,6 @@ router
 router
   .route("/get-schedule")
   .post(isUserAuthenticated, recycleController.getRecycleScheduleByTransactionId);
-
-router
-  .route("/admin/chats/initiate")
-  .post(
-    validate(adminChatValidator),
-    recycleController.initiateAdminRecycleChat
-  );
 
 router
   .route("/schedule-reminders")

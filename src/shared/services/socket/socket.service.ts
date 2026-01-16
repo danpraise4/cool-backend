@@ -41,8 +41,8 @@ export default class WS {
             await RedisService.instance.delete(userId);
           }
 
-          // Store new socket mapping
-          await RedisService.instance.set(userId, socket.id);
+          // Store new socket mapping with 1 hour TTL (safety measure, should be cleaned up on disconnect)
+          await RedisService.instance.set(userId, socket.id, 3600);
 
           this.setupEventHandlers(socket);
           socket.emit(WS_EVENT.CONNECTION, { 

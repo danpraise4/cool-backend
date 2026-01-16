@@ -30,7 +30,8 @@ export class MaterialsService {
 
     await RedisService.instance.set(
       "MATERIALS_CACHE",
-      JSON.stringify(materials.payload)
+      JSON.stringify(materials.payload),
+      3600 // 1 hour TTL
     );
 
     return materials.payload;
