@@ -1,13 +1,34 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { endpoints } from "./flutterwave.endpoints";
-import { IFlutterwaveBaseResponse } from "./flutterwave.interface";
+import { CreateCardChargeInput, IFlutterwaveBaseResponse } from "./flutterwave.interface";
 import FlutterwaveUtil from "./flutterwave.utils";
 
 export default class Flutterwave extends FlutterwaveUtil {
   constructor(build: { publicKey: string; secretKey: string }) {
     super(build);
   }
+
+
+  async createCardCharge(
+    data: CreateCardChargeInput
+  ): Promise<IFlutterwaveBaseResponse<any>> {
+    try {
+      const response = await this.postRequest<
+        { [key: string]: any },
+        IFlutterwaveBaseResponse<String>
+      >(this.buildHeader(), data, `${endpoints.CREATE_CARD_CHARGE}`);
+
+      return response;
+    } catch (err: unknown) {
+      console.log(err);
+      if (err instanceof Error) {
+        throw new Error(err.message);
+      }
+      throw new Error(err as string);
+    }
+  }
+
 
   async chargeCard(data: {
     [key: string]: any;

@@ -18,6 +18,9 @@ router
 // Top up Wallet
 router.route("/topup-card").post(isUserAuthenticated, walletController.topUpWalletCard);
 
+// Create Card Charge URL
+router.route("/create-card-charge-url").post(isUserAuthenticated, walletController.createCardChargeURL);
+
 // Get Banks List
 router.route("/banks").get(isUserAuthenticated, walletController.getBanksList);
 

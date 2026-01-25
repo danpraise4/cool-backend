@@ -16,3 +16,18 @@ export interface CardInput {
   tx_ref: string;
   redirect_url?: string;
 }
+
+
+export interface CreateCardChargeInput {
+  tx_ref: string;
+  amount: string;
+  currency: string;
+  redirect_url: string;
+  customer: {
+    email: string;
+    name: string;
+  };
+  customizations: {
+    title: string;
+  };
+}

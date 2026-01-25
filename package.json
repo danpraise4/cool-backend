@@ -7,7 +7,7 @@
     "test": "test"
   },
   "scripts": {
-    "dev": "nodemon ./src/server.ts",
+    "dev": "nodemon --exec \"npx ts-node\" ./src/server.ts",
     "build": "rimraf ./build && tsc && cp -R ./src/certs ./build/src/certs",
     "docker:build": "tsc",
     "start": "node build/src/server.js",

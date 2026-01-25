@@ -133,15 +133,15 @@ export class WalletService {
       phone_number: user.phone,
       tx_ref: user.id,
       redirect_url: "https://example_company.com/success",
-      authorization: {
-        mode: "pin",
-        pin: 2245,
-        city: "San Francisco",
-        address: "333 Fremont Street, San Francisco, CA",
-        state: "California",
-        country: "US",
-        zipcode: 94105,
-      },
+      // authorization: {
+      //   mode: "pin",
+      //   pin: 2245,
+      //   city: "San Francisco",
+      //   address: "333 Fremont Street, San Francisco, CA",
+      //   state: "California",
+      //   country: "US",
+      //   zipcode: 94105,
+      // },
     };
 
     const token = await this.tokenService.generateFlutterwaveToken({
@@ -150,6 +150,25 @@ export class WalletService {
     });
 
     const response = await this.FlutterwaveClient.chargeCard({ client: token });
+    return response;
+  }
+
+  public async createCardChargeURL({ user, amount }: { user: User; amount: number; }) {
+    const currency = user.cityOfResidence === "Lagos" ? "NGN" : "EUR";
+    const payload = {
+      tx_ref: user.id,
+      amount: amount.toString(),
+      currency: currency,
+      redirect_url: 'https://recycool.com/wallet/topup-success',
+      customer: {
+        email: user.email,
+        name: `${user.firstName} ${user.lastName}`,
+      },
+      customizations: {
+        title: "Topup Wallet",
+      },
+    };
+    const response = await this.FlutterwaveClient.createCardCharge(payload);
     return response;
   }
 

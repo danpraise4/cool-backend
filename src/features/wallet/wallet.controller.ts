@@ -99,6 +99,24 @@ export default class WalletController {
     }
   };
 
+  public createCardChargeURL = async (
+    req: RequestType,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const url = await this.walletService.createCardChargeURL({ user: req.user, amount: req.body.amount });
+      res.status(httpStatus.OK).json({
+        ...url,
+      }); 
+
+    } catch (error: any) {
+      return next(
+        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
+      );
+    }
+  };
+
   public getBankAccountDetails = async (
     req: RequestType,
     res: Response,
