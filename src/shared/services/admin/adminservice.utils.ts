@@ -1,6 +1,18 @@
 import fetch from "node-fetch";
 import { baseUrl } from "./adminservice.endpoints";
 
+/** Thrown when the Admin API returns an error (4xx/5xx or non-JSON). Callers can use statusCode to decide retry (e.g. don't retry on 4xx). */
+export class AdminApiError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number,
+  ) {
+    super(message);
+    this.name = "AdminApiError";
+    Object.setPrototypeOf(this, AdminApiError.prototype);
+  }
+}
+
 export interface ObjT {
   [key: string]: string;
 }
@@ -33,15 +45,17 @@ export default class AdminServiceUtil {
 
     if (!data.ok) {
       const preview = respStr.trim().slice(0, 100);
-      throw new Error(
-        `Admin API error ${data.status} ${data.statusText}: ${preview}${respStr.length > 100 ? "..." : ""}`
+      throw new AdminApiError(
+        `Admin API error ${data.status} ${data.statusText}: ${preview}${respStr.length > 100 ? "..." : ""}`,
+        data.status,
       );
     }
 
     const trimmed = respStr.trim();
     if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-      throw new Error(
-        `Admin API returned non-JSON (e.g. HTML). Status: ${data.status}. URL: ${baseUrl}${url}`
+      throw new AdminApiError(
+        `Admin API returned non-JSON (e.g. HTML). Status: ${data.status}. URL: ${baseUrl}${url}`,
+        data.status,
       );
     }
 
@@ -72,15 +86,17 @@ export default class AdminServiceUtil {
 
     if (!data.ok) {
       const preview = respStr.trim().slice(0, 100);
-      throw new Error(
-        `Admin API error ${data.status} ${data.statusText}: ${preview}${respStr.length > 100 ? "..." : ""}`
+      throw new AdminApiError(
+        `Admin API error ${data.status} ${data.statusText}: ${preview}${respStr.length > 100 ? "..." : ""}`,
+        data.status,
       );
     }
 
     const trimmed = respStr.trim();
     if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-      throw new Error(
-        `Admin API returned non-JSON (e.g. HTML). Status: ${data.status}. URL: ${baseUrl}${url}`
+      throw new AdminApiError(
+        `Admin API returned non-JSON (e.g. HTML). Status: ${data.status}. URL: ${baseUrl}${url}`,
+        data.status,
       );
     }
 
@@ -109,15 +125,17 @@ export default class AdminServiceUtil {
 
     if (!data.ok) {
       const preview = respStr.trim().slice(0, 100);
-      throw new Error(
-        `Admin API error ${data.status} ${data.statusText}: ${preview}${respStr.length > 100 ? "..." : ""}`
+      throw new AdminApiError(
+        `Admin API error ${data.status} ${data.statusText}: ${preview}${respStr.length > 100 ? "..." : ""}`,
+        data.status,
       );
     }
 
     const trimmed = respStr.trim();
     if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-      throw new Error(
-        `Admin API returned non-JSON (e.g. HTML). Status: ${data.status}. URL: ${baseUrl}${url}`
+      throw new AdminApiError(
+        `Admin API returned non-JSON (e.g. HTML). Status: ${data.status}. URL: ${baseUrl}${url}`,
+        data.status,
       );
     }
 
