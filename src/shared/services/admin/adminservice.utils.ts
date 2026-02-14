@@ -30,6 +30,21 @@ export default class AdminServiceUtil {
     });
 
     const respStr = await data.text();
+
+    if (!data.ok) {
+      const preview = respStr.trim().slice(0, 100);
+      throw new Error(
+        `Admin API error ${data.status} ${data.statusText}: ${preview}${respStr.length > 100 ? "..." : ""}`
+      );
+    }
+
+    const trimmed = respStr.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      throw new Error(
+        `Admin API returned non-JSON (e.g. HTML). Status: ${data.status}. URL: ${baseUrl}${url}`
+      );
+    }
+
     let resp;
     try {
       resp = JSON.parse(respStr);
@@ -54,6 +69,21 @@ export default class AdminServiceUtil {
     });
 
     const respStr = await data.text();
+
+    if (!data.ok) {
+      const preview = respStr.trim().slice(0, 100);
+      throw new Error(
+        `Admin API error ${data.status} ${data.statusText}: ${preview}${respStr.length > 100 ? "..." : ""}`
+      );
+    }
+
+    const trimmed = respStr.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      throw new Error(
+        `Admin API returned non-JSON (e.g. HTML). Status: ${data.status}. URL: ${baseUrl}${url}`
+      );
+    }
+
     let resp;
     try {
       resp = JSON.parse(respStr);
@@ -76,6 +106,21 @@ export default class AdminServiceUtil {
       timeout: 30000,
     });
     const respStr = await data.text();
+
+    if (!data.ok) {
+      const preview = respStr.trim().slice(0, 100);
+      throw new Error(
+        `Admin API error ${data.status} ${data.statusText}: ${preview}${respStr.length > 100 ? "..." : ""}`
+      );
+    }
+
+    const trimmed = respStr.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      throw new Error(
+        `Admin API returned non-JSON (e.g. HTML). Status: ${data.status}. URL: ${baseUrl}${url}`
+      );
+    }
+
     let resp;
     try {
       resp = JSON.parse(respStr);
