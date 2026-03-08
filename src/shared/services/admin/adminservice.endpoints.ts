@@ -1,6 +1,7 @@
 import { convertToObjT, ObjT } from "./adminservice.utils";
 
-const baseUrl = "https://recycool-api-stg.azurewebsites.net";
+const baseUrl = "https://recycool-api-stg-cbgqw.ondigitalocean.app";
+
 
 const endpoints = Object.freeze({
   // CHARGE: (params: ObjT): string => `/charges/?${convertToObjT(params)}`,
