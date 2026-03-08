@@ -12,7 +12,9 @@ import WS, {
 
 import './shared/jobs';
 
-const port: number = +config.PORT || 8080;
+// Use PORT from env (Koyeb/Cloud Run set this; often 8000); fallback 8080 for local
+const port: number = Number(process.env.PORT || config.PORT) || 8080;
+const host = "0.0.0.0"; // required for containers so health checks can reach the app
 
 const server = http.createServer(app);
 
@@ -61,8 +63,8 @@ server.on("error", (error) => {
   console.error("Server error:", error);
 });
 
-server.listen(port, () => {
-  console.info(`App is running on port ${port}`);
+server.listen(port, host, () => {
+  console.info(`App is running on http://${host}:${port}`);
 });
 
 const exitHandler = () => {

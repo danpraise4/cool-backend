@@ -8,7 +8,7 @@ const envSchema = Yup.object()
     NODE_ENV: Yup.string()
       .required()
       .oneOf(["development", "production", "test", "staging"]),
-    PORT: Yup.string().default("8080").required(),
+    PORT: Yup.string().default("8000").required(),
     ENVIRONMENT: Yup.string().default("staging"),
     DATABASE_URL: Yup.string().label(" Database URL"),
     APP_NAME: Yup.string().required().label("App Name").default("Aswitch"),

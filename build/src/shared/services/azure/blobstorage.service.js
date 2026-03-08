@@ -42,7 +42,15 @@ class AzureBlobService {
     blobServiceClient;
     containerClient;
     config;
+    /** True only after container createIfNotExists succeeds; server starts even if this stays false. */
+    available = false;
     static instance;
+    /**
+     * Whether Azure Blob Storage is connected and ready. When false, upload/delete/list etc. will return errors.
+     */
+    isAvailable() {
+        return this.available;
+    }
     /**
      * Creates an instance of AzureBlobService
      * @param config - Configuration for Azure Blob Storage
@@ -52,8 +60,7 @@ class AzureBlobService {
         this.blobServiceClient = storage_blob_1.BlobServiceClient.fromConnectionString(config.connectionString);
         this.containerClient = this.blobServiceClient.getContainerClient(config.containerName);
         this.initialize().catch((err) => {
-            console.error("Failed to initialize container on startup:", err);
-            throw err;
+            console.error("Azure Blob Storage unavailable (server will continue):", err?.message ?? err);
         });
     }
     static getInstance(connectionString, containerName) {
@@ -63,17 +70,18 @@ class AzureBlobService {
         return AzureBlobService.instance;
     }
     /**
-     * Initialize the blob service by creating the container if it doesn't exist
+     * Initialize the blob service by creating the container if it doesn't exist.
+     * Does not throw; sets available flag so server can start regardless.
      */
     async initialize() {
         try {
-            // Changed to "blob" for public read access to individual blobs
             await this.containerClient.createIfNotExists({ access: "blob" });
+            this.available = true;
             console.log(`Container '${this.config.containerName}' initialized successfully`);
         }
         catch (error) {
-            console.error(`Failed to initialize container '${this.config.containerName}': ${error.message}`);
-            throw error;
+            console.error(`Azure Blob Storage: container '${this.config.containerName}' unavailable: ${error.message}`);
+            this.available = false;
         }
     }
     /**
@@ -90,6 +98,14 @@ class AzureBlobService {
             return { valid: false, error: `File size exceeds ${this.config.maxSizeBytes / (1024 * 1024)} MB` };
         }
         return { valid: true };
+    }
+    ensureAvailable() {
+        if (!this.available) {
+            throw new Error("Azure Blob Storage is unavailable");
+        }
+    }
+    blobUnavailableResponse() {
+        return { success: false, error: "Azure Blob Storage is unavailable" };
     }
     /**
      * Extracts blob name from Azure Blob Storage URL
@@ -120,6 +136,7 @@ class AzureBlobService {
      */
     async debugListBlobs(prefix) {
         try {
+            this.ensureAvailable();
             console.log(`\n=== DEBUG: Listing blobs with prefix: "${prefix || 'none'}" ===`);
             const blobs = await this.listFiles(prefix);
             console.log(`Found ${blobs.length} blobs:`);
@@ -143,6 +160,7 @@ class AzureBlobService {
      */
     async debugCheckBlob(blobName) {
         try {
+            this.ensureAvailable();
             console.log(`\n=== DEBUG: Checking blob: "${blobName}" ===`);
             const blobClient = this.getBlobClient(blobName);
             const exists = await blobClient.exists();
@@ -167,6 +185,7 @@ class AzureBlobService {
         }
     }
     async deleteImage(imageUrl) {
+        this.ensureAvailable();
         const blobName = this.extractBlobNameFromUrl(imageUrl);
         console.log(`Attempting to delete blob: "${blobName}"`);
         // Debug: Check if blob exists first
@@ -208,6 +227,8 @@ class AzureBlobService {
      * @returns Promise resolving to BlobResponse
      */
     async uploadFile(file, fileName, contentType, fileSize, folder) {
+        if (!this.available)
+            return this.blobUnavailableResponse();
         try {
             const validation = this.validateFile(contentType, fileSize);
             if (!validation.valid) {
@@ -287,6 +308,8 @@ class AzureBlobService {
      * @returns Promise resolving to BlobResponse
      */
     async deleteFile(blobName) {
+        if (!this.available)
+            return this.blobUnavailableResponse();
         try {
             const blobClient = this.getBlobClient(blobName);
             const exists = await blobClient.exists();
@@ -312,6 +335,8 @@ class AzureBlobService {
      * @returns Promise resolving to BlobResponse
      */
     async replaceFile(blobName, newFile, contentType, fileSize) {
+        if (!this.available)
+            return this.blobUnavailableResponse();
         try {
             const blobClient = this.getBlobClient(blobName);
             const exists = await blobClient.exists();
@@ -354,6 +379,8 @@ class AzureBlobService {
      * @returns Promise resolving to BlobResponse
      */
     async copyFile(sourceBlobName, destinationBlobName) {
+        if (!this.available)
+            return this.blobUnavailableResponse();
         try {
             const sourceBlobClient = this.getBlobClient(sourceBlobName);
             const exists = await sourceBlobClient.exists();
@@ -382,6 +409,7 @@ class AzureBlobService {
      * @returns Promise resolving to an array of blob info objects
      */
     async listFiles(prefix) {
+        this.ensureAvailable();
         try {
             const options = prefix ? { prefix } : undefined;
             const blobs = [];
@@ -409,6 +437,8 @@ class AzureBlobService {
      * @returns Promise resolving to the blob URL or null if it doesn't exist
      */
     async getBlobUrl(blobName) {
+        if (!this.available)
+            return null;
         try {
             const blobClient = this.getBlobClient(blobName);
             const exists = await blobClient.exists();
@@ -428,6 +458,8 @@ class AzureBlobService {
      * @returns Promise resolving to the SAS URL or null if an error occurs
      */
     async generateSasUrl(blobName, expiryMinutes = 60, permissions = storage_blob_1.BlobSASPermissions.parse("rw")) {
+        if (!this.available)
+            return null;
         try {
             const blobClient = this.getBlobClient(blobName);
             const exists = await blobClient.exists();
@@ -456,6 +488,8 @@ class AzureBlobService {
      * @returns Promise resolving to the blob properties or null if it doesn't exist
      */
     async getBlobProperties(blobName) {
+        if (!this.available)
+            return null;
         try {
             const blobClient = this.getBlobClient(blobName);
             const exists = await blobClient.exists();
@@ -480,6 +514,8 @@ class AzureBlobService {
      * @returns Promise resolving to BlobResponse
      */
     async uploadBase64Image(base64String, fileName, contentType) {
+        if (!this.available)
+            return this.blobUnavailableResponse();
         try {
             const base64Data = base64String.replace(/^data:image\/\w+;base64,/, "");
             const buffer = buffer_1.Buffer.from(base64Data, "base64");
@@ -497,6 +533,9 @@ class AzureBlobService {
      * @returns Object containing buffer and metadata
      */
     async validateAndProcessBase64(base64String) {
+        if (!this.available) {
+            return { valid: false, error: "Azure Blob Storage is unavailable" };
+        }
         try {
             if (!base64String.match(/^data:image\/[a-zA-Z]+;base64,/)) {
                 return { valid: false, error: "Invalid base64 string format. Must start with data:image/*;base64," };
@@ -521,6 +560,8 @@ class AzureBlobService {
      * @returns Promise resolving to BlobResponse
      */
     async replaceWithBase64Image(blobName, base64String) {
+        if (!this.available)
+            return this.blobUnavailableResponse();
         const processResult = await this.validateAndProcessBase64(base64String);
         if (!processResult.valid || !processResult.buffer || !processResult.contentType) {
             return { success: false, error: processResult.error };

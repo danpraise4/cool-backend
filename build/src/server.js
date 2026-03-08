@@ -45,7 +45,9 @@ const redis_service_1 = __importDefault(require("./shared/services/redis.service
 const blobstorage_service_1 = require("./shared/services/azure/blobstorage.service");
 const socket_service_1 = __importStar(require("./shared/services/socket/socket.service"));
 require("./shared/jobs");
-const port = +app_config_1.default.PORT || 8080;
+// Use PORT from env (Koyeb/Cloud Run set this; often 8000); fallback 8080 for local
+const port = Number(process.env.PORT || app_config_1.default.PORT) || 8080;
+const host = "0.0.0.0"; // required for containers so health checks can reach the app
 const server = http_1.default.createServer(app_1.default);
 // Initialize Redis
 redis_service_1.default.getInstance();
@@ -73,14 +75,19 @@ const io = new socket_io_1.Server(server, {
 });
 io.use(socket_service_1.socketUserMiddleware);
 socket_service_1.default.getInstance(io);
-// Initialize Azure Blob Service
-blobstorage_service_1.AzureBlobService.getInstance(app_config_1.default.AZURE_BLOB.CONNECTION_STRING, app_config_1.default.AZURE_BLOB.CONTAINER_NAME);
+// Initialize Azure Blob Service (non-blocking; server starts even if blob is unavailable)
+try {
+    blobstorage_service_1.AzureBlobService.getInstance(app_config_1.default.AZURE_BLOB.CONNECTION_STRING, app_config_1.default.AZURE_BLOB.CONTAINER_NAME);
+}
+catch (err) {
+    console.warn("Azure Blob Service init skipped (server will continue):", err?.message);
+}
 // Handle server errors
 server.on("error", (error) => {
     console.error("Server error:", error);
 });
-server.listen(port, () => {
-    console.info(`App is running on port ${port}`);
+server.listen(port, host, () => {
+    console.info(`App is running on http://${host}:${port}`);
 });
 const exitHandler = () => {
     if (server) {
