@@ -14,9 +14,16 @@ import { Buffer } from "buffer";
   private blobServiceClient: BlobServiceClient;
   private containerClient: ContainerClient;
   private config: AzureBlobStorageConfig;
+  /** True only after container createIfNotExists succeeds; server starts even if this stays false. */
+  private available = false;
   public static instance: AzureBlobService;
-  
 
+  /**
+   * Whether Azure Blob Storage is connected and ready. When false, upload/delete/list etc. will return errors.
+   */
+  public isAvailable(): boolean {
+    return this.available;
+  }
 
   /**
    * Creates an instance of AzureBlobService
@@ -28,8 +35,7 @@ import { Buffer } from "buffer";
     this.blobServiceClient = BlobServiceClient.fromConnectionString(config.connectionString);
     this.containerClient = this.blobServiceClient.getContainerClient(config.containerName);
     this.initialize().catch((err) => {
-      console.error("Failed to initialize container on startup:", err);
-      throw err;
+      console.error("Azure Blob Storage unavailable (server will continue):", err?.message ?? err);
     });
   }
 
@@ -41,16 +47,17 @@ import { Buffer } from "buffer";
   }
 
   /**
-   * Initialize the blob service by creating the container if it doesn't exist
+   * Initialize the blob service by creating the container if it doesn't exist.
+   * Does not throw; sets available flag so server can start regardless.
    */
   public async initialize(): Promise<void> {
     try {
-      // Changed to "blob" for public read access to individual blobs
       await this.containerClient.createIfNotExists({ access: "blob" });
+      this.available = true;
       console.log(`Container '${this.config.containerName}' initialized successfully`);
     } catch (error: any) {
-      console.error(`Failed to initialize container '${this.config.containerName}': ${error.message}`);
-      throw error;
+      console.error(`Azure Blob Storage: container '${this.config.containerName}' unavailable: ${error.message}`);
+      this.available = false;
     }
   }
 
@@ -68,6 +75,16 @@ import { Buffer } from "buffer";
       return { valid: false, error: `File size exceeds ${this.config.maxSizeBytes / (1024 * 1024)} MB` };
     }
     return { valid: true };
+  }
+
+  private ensureAvailable(): void {
+    if (!this.available) {
+      throw new Error("Azure Blob Storage is unavailable");
+    }
+  }
+
+  private blobUnavailableResponse(): BlobResponse {
+    return { success: false, error: "Azure Blob Storage is unavailable" };
   }
 
   /**
@@ -99,6 +116,7 @@ import { Buffer } from "buffer";
    */
   public async debugListBlobs(prefix?: string): Promise<void> {
     try {
+      this.ensureAvailable();
       console.log(`\n=== DEBUG: Listing blobs with prefix: "${prefix || 'none'}" ===`);
       const blobs = await this.listFiles(prefix);
       console.log(`Found ${blobs.length} blobs:`);
@@ -128,6 +146,7 @@ import { Buffer } from "buffer";
     error?: string;
   }> {
     try {
+      this.ensureAvailable();
       console.log(`\n=== DEBUG: Checking blob: "${blobName}" ===`);
       const blobClient = this.getBlobClient(blobName);
       const exists = await blobClient.exists();
@@ -153,6 +172,7 @@ import { Buffer } from "buffer";
   }
 
   public async deleteImage(imageUrl: string): Promise<void> {
+    this.ensureAvailable();
     const blobName = this.extractBlobNameFromUrl(imageUrl);
     console.log(`Attempting to delete blob: "${blobName}"`);
     
@@ -205,6 +225,7 @@ import { Buffer } from "buffer";
     fileSize: number,
     folder?: string
   ): Promise<BlobResponse> {
+    if (!this.available) return this.blobUnavailableResponse();
     try {
       const validation = this.validateFile(contentType, fileSize);
       if (!validation.valid) {
@@ -301,6 +322,7 @@ import { Buffer } from "buffer";
    * @returns Promise resolving to BlobResponse
    */
   public async deleteFile(blobName: string): Promise<BlobResponse> {
+    if (!this.available) return this.blobUnavailableResponse();
     try {
       const blobClient = this.getBlobClient(blobName);
       const exists = await blobClient.exists();
@@ -332,6 +354,7 @@ import { Buffer } from "buffer";
     contentType: string,
     fileSize: number
   ): Promise<BlobResponse> {
+    if (!this.available) return this.blobUnavailableResponse();
     try {
       const blobClient = this.getBlobClient(blobName);
       const exists = await blobClient.exists();
@@ -380,6 +403,7 @@ import { Buffer } from "buffer";
     sourceBlobName: string,
     destinationBlobName?: string
   ): Promise<BlobResponse> {
+    if (!this.available) return this.blobUnavailableResponse();
     try {
       const sourceBlobClient = this.getBlobClient(sourceBlobName);
       const exists = await sourceBlobClient.exists();
@@ -415,6 +439,7 @@ import { Buffer } from "buffer";
   public async listFiles(
     prefix?: string
   ): Promise<{ name: string; url: string; contentType: string; size: number }[]> {
+    this.ensureAvailable();
     try {
       const options = prefix ? { prefix } : undefined;
       const blobs = [];
@@ -442,6 +467,7 @@ import { Buffer } from "buffer";
    * @returns Promise resolving to the blob URL or null if it doesn't exist
    */
   public async getBlobUrl(blobName: string): Promise<string | null> {
+    if (!this.available) return null;
     try {
       const blobClient = this.getBlobClient(blobName);
       const exists = await blobClient.exists();
@@ -465,6 +491,7 @@ import { Buffer } from "buffer";
     expiryMinutes: number = 60,
     permissions: BlobSASPermissions = BlobSASPermissions.parse("rw")
   ): Promise<string | null> {
+    if (!this.available) return null;
     try {
       const blobClient = this.getBlobClient(blobName);
       const exists = await blobClient.exists();
@@ -495,6 +522,7 @@ import { Buffer } from "buffer";
    * @returns Promise resolving to the blob properties or null if it doesn't exist
    */
   public async getBlobProperties(blobName: string): Promise<any | null> {
+    if (!this.available) return null;
     try {
       const blobClient = this.getBlobClient(blobName);
       const exists = await blobClient.exists();
@@ -523,6 +551,7 @@ import { Buffer } from "buffer";
     fileName: string,
     contentType: string
   ): Promise<BlobResponse> {
+    if (!this.available) return this.blobUnavailableResponse();
     try {
       const base64Data = base64String.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
@@ -546,6 +575,9 @@ import { Buffer } from "buffer";
     contentType?: string;
     error?: string;
   }> {
+    if (!this.available) {
+      return { valid: false, error: "Azure Blob Storage is unavailable" };
+    }
     try {
       if (!base64String.match(/^data:image\/[a-zA-Z]+;base64,/)) {
         return { valid: false, error: "Invalid base64 string format. Must start with data:image/*;base64," };
@@ -576,6 +608,7 @@ import { Buffer } from "buffer";
     blobName: string,
     base64String: string
   ): Promise<BlobResponse> {
+    if (!this.available) return this.blobUnavailableResponse();
     const processResult = await this.validateAndProcessBase64(base64String);
     if (!processResult.valid || !processResult.buffer || !processResult.contentType) {
       return { success: false, error: processResult.error };

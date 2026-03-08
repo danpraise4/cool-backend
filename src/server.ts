@@ -46,11 +46,15 @@ io.use(socketUserMiddleware);
 WS.getInstance(io);
 
 
-// Initialize Azure Blob Service
-AzureBlobService.getInstance(
-  config.AZURE_BLOB.CONNECTION_STRING,
-  config.AZURE_BLOB.CONTAINER_NAME
-);
+// Initialize Azure Blob Service (non-blocking; server starts even if blob is unavailable)
+try {
+  AzureBlobService.getInstance(
+    config.AZURE_BLOB.CONNECTION_STRING,
+    config.AZURE_BLOB.CONTAINER_NAME
+  );
+} catch (err) {
+  console.warn("Azure Blob Service init skipped (server will continue):", (err as Error)?.message);
+}
 
 // Handle server errors
 server.on("error", (error) => {
