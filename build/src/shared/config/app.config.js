@@ -64,12 +64,12 @@ const envSchema = Yup.object()
         .required()
         .label("SendGrid From Email")
         .required(),
-    AZURE_BLOB_CONNECTION_STRING: Yup.string()
-        .required()
-        .label("Azure Blob Connection String"),
-    AZURE_BLOB_CONTAINER_NAME: Yup.string()
-        .required()
-        .label("Azure Blob Container Name"),
+    AZURE_BLOB_CONNECTION_STRING: Yup.string().default(""),
+    AZURE_BLOB_CONTAINER_NAME: Yup.string().default(""),
+    CLOUDINARY_CLOUD_NAME: Yup.string().required().label("Cloudinary Cloud Name"),
+    CLOUDINARY_API_KEY: Yup.string().required().label("Cloudinary API Key"),
+    CLOUDINARY_API_SECRET: Yup.string().required().label("Cloudinary API Secret"),
+    CLOUDINARY_UPLOAD_PRESET: Yup.string().default(""),
     REDIS_HOST: Yup.string().required().label("Redis Host"),
     REDIS_PORT: Yup.string().required().label("Redis Port"),
     REDIS_URL: Yup.string().required().label("Redis URL"),
@@ -127,6 +127,12 @@ const config = {
     AZURE_BLOB: {
         CONNECTION_STRING: envVars.AZURE_BLOB_CONNECTION_STRING,
         CONTAINER_NAME: envVars.AZURE_BLOB_CONTAINER_NAME,
+    },
+    CLOUDINARY: {
+        CLOUD_NAME: envVars.CLOUDINARY_CLOUD_NAME,
+        API_KEY: envVars.CLOUDINARY_API_KEY,
+        API_SECRET: envVars.CLOUDINARY_API_SECRET,
+        UPLOAD_PRESET: envVars.CLOUDINARY_UPLOAD_PRESET,
     },
     // Database Config
     DATABASE_URL: envVars.DATABASE_URL,

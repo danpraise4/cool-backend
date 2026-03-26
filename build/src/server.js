@@ -77,7 +77,7 @@ io.use(socket_service_1.socketUserMiddleware);
 socket_service_1.default.getInstance(io);
 // Initialize Azure Blob Service (non-blocking; server starts even if blob is unavailable)
 try {
-    blobstorage_service_1.AzureBlobService.getInstance(app_config_1.default.AZURE_BLOB.CONNECTION_STRING, app_config_1.default.AZURE_BLOB.CONTAINER_NAME);
+    blobstorage_service_1.AzureBlobService.getInstance(app_config_1.default.CLOUDINARY.CLOUD_NAME, app_config_1.default.CLOUDINARY.API_KEY, app_config_1.default.CLOUDINARY.API_SECRET, app_config_1.default.CLOUDINARY.UPLOAD_PRESET);
 }
 catch (err) {
     console.warn("Azure Blob Service init skipped (server will continue):", err?.message);

@@ -1,6 +1,8 @@
 export interface AzureBlobStorageConfig {
-  connectionString: string;
-  containerName: string;
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+  uploadPreset?: string;
   allowedFileTypes?: string[];
   maxSizeBytes?: number;
 }

@@ -29,6 +29,7 @@
     "axios": "^1.10.0",
     "bcrypt": "^5.0.1",
     "bullmq": "^5.54.3",
+    "cloudinary": "^2.9.0",
     "config": "^3.3.7",
     "cors": "^2.8.5",
     "cross-env": "^7.0.3",
