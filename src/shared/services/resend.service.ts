@@ -10,7 +10,8 @@ export class ResendService {
     data: { otp: string }
   ) {
     const response = await this.resend.emails.send({
-      from: "Support <noreply@apprecycool.com>",
+      from: "Support <noreply@goafrica.tech>",
+
       to: email,
       subject: TemplateConfig[template].subject,
       html: TemplateConfig[template].body.replace("{{otp}}", data.otp),
