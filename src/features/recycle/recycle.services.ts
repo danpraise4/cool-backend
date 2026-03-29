@@ -354,12 +354,18 @@ export class RecycleService {
       return chat;
     }
 
+    const user = await prismaClient.user.findUnique({
+      where: { id: userID },
+    });
+
     // create chat
     const newChat = await prismaClient.recycleChat.create({
       data: {
         chatID,
         createdBy: userID,
         withUser: withID,
+        name: user.firstName + " " + user.lastName,
+        profilePhoto: user.image,
         type,
       },
     });
