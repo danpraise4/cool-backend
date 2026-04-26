@@ -218,7 +218,7 @@ export default class WalletController {
   ) => {
     try {
       const user: User = req.user;
-      const banks = await this.walletService.getBanksList(user.cityOfResidence);
+      const banks = await this.walletService.getBanksList(user);
       res.status(httpStatus.OK).json({
         message: "Banks fetched successfully",
         data: banks,

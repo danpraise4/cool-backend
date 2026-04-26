@@ -25,41 +25,53 @@ function getClientIP(req: Request) {
   return req.connection.remoteAddress;
 }
 
-app.use((req: Request, res: Response, next: NextFunction) => {
+const corsOriginSetting = config.CORS_ORIGIN || "*";
+const corsOrigin =
+  corsOriginSetting === "*"
+    ? true
+    : corsOriginSetting.split(",").map((o) => o.trim()).filter(Boolean);
 
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
-  }
-  return next();
-});
+app.use(
+  cors({
+    origin: corsOrigin,
+    credentials: true,
+    methods: ["GET", "PUT", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Origin",
+      "X-Requested-With",
+      "Content-Type",
+      "Accept",
+      "Authorization",
+    ],
+  })
+);
 
 if (config.ENVIRONMENT === ENVIRONMENT_TYPE.PRODUCTION || config.ENVIRONMENT === ENVIRONMENT_TYPE.STAGING) {
   app.use(enforce.HTTPS({ trustProtoHeader: true }));
 }
 
 if (config.ENVIRONMENT === ENVIRONMENT_TYPE.DEVELOPMENT) {
-  app.use(morgan('dev'));
+  app.use(morgan("dev"));
+} else {
+  app.use(morgan("combined"));
 }
 
-app.use(express.json({ limit: '10MB' }));
+app.use(express.json({ limit: "10MB" }));
 app.use(express.urlencoded({ extended: true }));
-app.use(cors());
 app.use(hpp());
 app.use(helmet());
 
-// Rate Limiter
+// Rate Limiter (failed / error responses; tune via API_RATE_LIMIT_MAX in env)
 if (config.ENVIRONMENT === ENVIRONMENT_TYPE.PRODUCTION) {
+  const maxRequests = config.API_RATE_LIMIT_MAX ?? 400;
   const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, 
-    max: 20,
+    windowMs: 15 * 60 * 1000,
+    max: maxRequests,
     skipSuccessfulRequests: true,
     keyGenerator: (req) => getClientIP(req),
-    message: 'Too many requests from this IP, please try again in an 15mins!',
+    message: "Too many requests from this IP, please try again later.",
   });
-  app.use('/api', limiter);
+  app.use("/api", limiter);
 }
 
 // Disable XSRF protection

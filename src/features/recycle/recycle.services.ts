@@ -121,7 +121,11 @@ export class RecycleService {
       );
     }
 
-
+    if (!existingSchedule.transactionId) {
+      throw new Error(
+        "This schedule cannot be updated because it has no linked facility request."
+      );
+    }
 
     // Validate dates
     const currentDate = new Date();
@@ -158,6 +162,10 @@ export class RecycleService {
       data: {
         dates: [Helper.toDate(config.schedule.scheduledCollectionDate)],
         status: Helper.matchStatus(config.schedule.transactionStatus) as RecycleScheduleStatus,
+        quantity:
+          config.schedule.quantity ??
+          existingSchedule.quantity ??
+          1,
       },
     });
 
