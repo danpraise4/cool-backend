@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import config from "../config/app.config";
+import logger from "./logger";
 
 export default class RedisService {
   public static instance: RedisService;
@@ -27,15 +28,12 @@ export default class RedisService {
   }
 
   async checkConnection() {
-    console.log("Checking Redis connection");
-    let isConnected = false;
     try {
       await this.client.ping();
-      isConnected = true;
+      logger.info("Redis connection OK");
     } catch (error) {
-      isConnected = false;
+      logger.error({ err: error }, "Redis connection failed");
     }
-    console.log("Redis connection status", isConnected);
   }
 
   async set(key: string, value: string, ttl?: number): Promise<string> {

@@ -16,8 +16,6 @@ export class MaterialsService {
 
   public async getMaterials(): Promise<IMaterialData[]> {
     const cachedMaterials = await RedisService.instance.get("MATERIALS_CACHE");
-    console.log("cachedMaterials", cachedMaterials);
-
     if (cachedMaterials) {
       return JSON.parse(cachedMaterials);
     }

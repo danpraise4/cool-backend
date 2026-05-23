@@ -3,6 +3,7 @@ import { redis } from "../utils/catch";
 import AdminService from "../../services/admin/adminservice";
 import { AdminApiError } from "../../services/admin/adminservice.utils";
 import client from "../../../infastructure/database/postgreSQL/connect";
+import logger from "../../services/logger";
 
 const adminService = new AdminService();
 
@@ -10,15 +11,11 @@ export const facilitiesWorker = new Worker(
   "facilities",
   async (job: Job) => {
     job.updateData({ status: "processing" });
-    console.log("Processing facilities");
 
     try {
-      const facilities = await adminService.getFacilities({
-        page: 1,
-        limit: 1000,
-      });
+      const facilities = await adminService.getFacilities({ page: 1, limit: 1000 });
 
-      for (const facility of facilities.payload.items) {
+      for (const facility of (facilities as any).payload.items) {
         await client.facility.upsert({
           where: { id: facility.id },
           update: {
@@ -40,13 +37,11 @@ export const facilitiesWorker = new Worker(
       job.updateData({ status: "completed" });
     } catch (err) {
       if (err instanceof AdminApiError && err.statusCode >= 400 && err.statusCode < 500) {
-        console.warn(`[facilities] Admin API ${err.statusCode} (e.g. site disabled): ${err.message}`);
+        logger.warn({ statusCode: err.statusCode, err }, "facilities sync: Admin API client error, not retrying");
         throw new UnrecoverableError(err.message);
       }
       throw err;
     }
   },
-  {
-    connection: redis,
-  }
+  { connection: redis }
 );

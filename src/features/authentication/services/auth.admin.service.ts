@@ -1,203 +1,157 @@
-import { User } from "@prisma/client";
 import prisma from "../../../infastructure/database/postgreSQL/connect";
 import { STATUS } from "../../../shared/config/app.constants";
 import EncryptionService from "../../../shared/services/encryption.service";
 import TokenService from "../../../shared/services/token.service";
 import { OtpService } from "../../otp/otp.service";
 import { IRegistration } from "../interfaces/auth.interface";
-import config from "../../../shared/config/app.config";
 import { sanitizeIdentifier } from "../auth.utils";
-
-export const { GOOGLE } = config;
+import AppException from "../../../infastructure/https/exception/app.exception";
+import httpStatus from "http-status";
 
 export class AuthAdminService {
-  constructor() {}
-
   private readonly otpService = new OtpService();
   private readonly encryptionService = new EncryptionService();
   private readonly tokenService = new TokenService();
 
-  public async register(indentifer: string) {
-    try {
-      const identifierData = sanitizeIdentifier(indentifer);
+  public async register(identifier: string) {
+    const identifierData = sanitizeIdentifier(identifier);
 
-      // Check for existing verified user
-      const existingUser = await prisma.admin.findFirst({
-        where: {
-          [identifierData.type]: identifierData.value,
-          status: STATUS.VERIFIED,
-        },
-      });
+    const verifiedAdmin = await prisma.admin.findFirst({
+      where: { [identifierData.type]: identifierData.value, status: STATUS.VERIFIED },
+    });
 
-      if (existingUser) {
-        throw new Error("This phone number is already registered");
-      }
-
-      // Check for unverified user
-      const unverifiedUser = await prisma.admin.findFirst({
-        where: {
-          [identifierData.type]: identifierData.value,
-          status: STATUS.PENDING,
-        },
-      });
-
-      if (unverifiedUser) {
-        const token_sent = await this.otpService.createOtp(
-          identifierData.value
-        );
-        return { user: unverifiedUser, token: token_sent };
-      }
-
-      // Create new user
-      const newUser = await prisma.admin.create({
-        data: {
-          [identifierData.type]: identifierData.value,
-          firstName: "",
-          lastName: "",
-        },
-        select: {
-          id: true,
-          [identifierData.type]: true,
-          firstName: true,
-          lastName: true,
-          createdAt: true,
-        },
-      });
-
-      const token_sent = await this.otpService.createOtp(identifierData.value);
-      return { user: newUser, token: token_sent };
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`User registration failed: ${error.message}`);
-      }
-      throw new Error("An unexpected error occurred during registration");
+    if (verifiedAdmin) {
+      throw new AppException("This account is already registered", httpStatus.CONFLICT);
     }
+
+    const pendingAdmin = await prisma.admin.findFirst({
+      where: { [identifierData.type]: identifierData.value, status: STATUS.PENDING },
+    });
+
+    if (pendingAdmin) {
+      const token = await this.otpService.createOtp(identifierData.value);
+      return { user: pendingAdmin, token };
+    }
+
+    const newAdmin = await prisma.admin.create({
+      data: {
+        [identifierData.type]: identifierData.value,
+        firstName: "",
+        lastName: "",
+      },
+      select: {
+        id: true,
+        [identifierData.type]: true,
+        firstName: true,
+        lastName: true,
+        createdAt: true,
+      },
+    });
+
+    const token = await this.otpService.createOtp(identifierData.value);
+    return { user: newAdmin, token };
   }
 
   public async verifyOtp(identifier: string, otp: string) {
     const identifierData = sanitizeIdentifier(identifier);
-    console.log(identifierData);
 
-    const user = await prisma.admin.findFirst({
+    const admin = await prisma.admin.findFirst({
       where: { [identifierData.type]: identifierData.value },
     });
 
-    if (!user) {
-      throw new Error("Admin not found");
+    if (!admin) {
+      throw new AppException("Admin not found", httpStatus.NOT_FOUND);
     }
 
-    const verifiedOtp = await this.otpService.verifyOtp(
-      identifierData.value,
-      otp
-    );
+    const verifiedOtp = await this.otpService.verifyOtp(identifierData.value, otp);
+
     if (!verifiedOtp) {
-      throw new Error("Invalid OTP");
+      throw new AppException("Invalid OTP", httpStatus.BAD_REQUEST);
     }
 
     const updatedAdmin = await prisma.admin.update({
-      where: { id: user.id },
-      data: {
-        status: STATUS.VERIFIED,
-        isEmailVerified: true,
-      },
-      select: {
-        id: true,
-        email: true,
-        createdAt: true,
-      },
+      where: { id: admin.id },
+      data: { status: STATUS.VERIFIED, isEmailVerified: true },
+      select: { id: true, email: true, createdAt: true },
     });
 
     return { admin: updatedAdmin, otp: verifiedOtp };
   }
 
   public async completeRegistration(data: IRegistration) {
-    // check if otp is valid
     const otp = await this.otpService.getOtp(data.token);
+
     if (!otp) {
-      throw Error("Invalid OTP");
+      throw new AppException("Invalid or expired token", httpStatus.BAD_REQUEST);
     }
 
-    // check if user exists
     const identifierData = sanitizeIdentifier(otp.identifier);
-    const user = await prisma.admin.findFirst({
+
+    const admin = await prisma.admin.findFirst({
       where: { [identifierData.type]: identifierData.value },
     });
 
-    if (!user) {
-      throw Error("User not found");
+    if (!admin) {
+      throw new AppException("Admin not found", httpStatus.NOT_FOUND);
     }
 
-    console.log(user);
-    console.log(identifierData);
-
-    // check if email is already in use
-    const emailUser = await prisma.admin.findFirst({
-      where: {
-        [identifierData.type]: identifierData.value,
-        password: { not: null },
-      },
+    const alreadyComplete = await prisma.admin.findFirst({
+      where: { [identifierData.type]: identifierData.value, password: { not: null } },
     });
 
-    if (emailUser) {
-      throw Error("Email already in use");
+    if (alreadyComplete) {
+      throw new AppException("Registration already completed", httpStatus.CONFLICT);
     }
 
-    // hash password
-    const hashedPassword = await this.encryptionService.hashPassword(
-      data.password.trim()
-    );
+    const hashedPassword = await this.encryptionService.hashPassword(data.password.trim());
 
-    // create user
-    const newUser = await prisma.admin.update({
-      where: { id: user.id },
+    const updatedAdmin = await prisma.admin.update({
+      where: { id: admin.id },
       data: {
         [identifierData.type]: identifierData.value,
-
         firstName: data.firstName,
+        lastName: data.lastName,
         password: hashedPassword,
         status: STATUS.COMPLETED,
-        lastName: data.lastName,
       },
     });
 
     await this.otpService.deleteOtp(otp.id);
-    return newUser;
+    return updatedAdmin;
   }
 
   public async login(identifier: string, password: string) {
     const identifierData = sanitizeIdentifier(identifier);
 
-    const user = await prisma.admin.findFirst({
+    const admin = await prisma.admin.findFirst({
       where: { [identifierData.type]: identifierData.value },
     });
 
-    if (!user) {
-      throw Error("User not found");
+    if (!admin) {
+      throw new AppException("Invalid credentials", httpStatus.UNAUTHORIZED);
     }
 
-    if (user.status !== STATUS.COMPLETED || user.password === null) {
-      throw Error("User not completed registration");
+    if (admin.status !== STATUS.COMPLETED || !admin.password) {
+      throw new AppException(
+        "Registration not complete. Please finish setting up your account.",
+        httpStatus.FORBIDDEN
+      );
     }
-
-    console.log(
-      `hashedPassword: ${password} :  userPassword: ${user.password}`
-    );
 
     const isPasswordValid = await this.encryptionService.comparePassword(
-      user.password,
+      admin.password,
       password
     );
 
     if (!isPasswordValid) {
-      throw Error("Invalid password");
+      throw new AppException("Invalid credentials", httpStatus.UNAUTHORIZED);
     }
 
-    return user;
+    return admin;
   }
 
   public async generateToken(id: string, name: string) {
-    const token = await this.tokenService.generateToken(id, name);
-    return token;
+    return this.tokenService.generateToken(id, name);
   }
 
   public async logout(id: string) {
@@ -205,31 +159,50 @@ export class AuthAdminService {
   }
 
   public async updatePassword(
-    user: User,
-    password: string,
+    adminId: string,
+    newPassword: string,
     passwordConfirmation: string,
     oldPassword: string
   ) {
-    if (password !== passwordConfirmation) {
-      throw Error("Password and password confirmation do not match");
+    if (newPassword !== passwordConfirmation) {
+      throw new AppException(
+        "New password and confirmation do not match",
+        httpStatus.BAD_REQUEST
+      );
     }
 
-    const isPasswordValid = await this.encryptionService.comparePassword(
-      oldPassword,
-      user.password || ""
+    const admin = await prisma.admin.findUnique({ where: { id: adminId } });
+
+    if (!admin || !admin.password) {
+      throw new AppException("Admin not found", httpStatus.NOT_FOUND);
+    }
+
+    const isOldPasswordValid = await this.encryptionService.comparePassword(
+      admin.password,
+      oldPassword
     );
 
-    if (!isPasswordValid) {
-      throw Error("Invalid old password");
+    if (!isOldPasswordValid) {
+      throw new AppException("Current password is incorrect", httpStatus.BAD_REQUEST);
     }
 
-    const hashedPassword = await this.encryptionService.hashPassword(password);
-    const updatedUser = await prisma.admin.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-      },
+    const isSamePassword = await this.encryptionService.comparePassword(
+      admin.password,
+      newPassword
+    );
+
+    if (isSamePassword) {
+      throw new AppException(
+        "New password cannot be the same as current password",
+        httpStatus.BAD_REQUEST
+      );
+    }
+
+    const hashedPassword = await this.encryptionService.hashPassword(newPassword);
+
+    return prisma.admin.update({
+      where: { id: adminId },
+      data: { password: hashedPassword },
     });
-    return updatedUser;
   }
 }

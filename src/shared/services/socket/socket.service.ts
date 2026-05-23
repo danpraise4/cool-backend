@@ -3,7 +3,9 @@ import { DefaultEventsMap } from "socket.io/dist/typed-events";
 import RedisService from "../redis.service";
 import { WS_EVENT } from "../../config/app.constants";
 import { RecycleService } from "../../../features/recycle/recycle.services";
+import logger from "../logger";
 
+const recycleService = new RecycleService();
 
 export default class WS {
   public static instance: WS;
@@ -22,196 +24,122 @@ export default class WS {
   }
 
   private setupSocket() {
-    this.io.on(
-      WS_EVENT.CONNECTION,
-      async (socket: Socket<DefaultEventsMap>) => {
-        console.log("New client connected:", socket.id);
-        console.log("Client origin:", socket.handshake.headers.origin);
-        console.log("Client user agent:", socket.handshake.headers['user-agent']);
-        
-        const { User } = socket.handshake.query;
-        const userId = User as string;
+    this.io.on(WS_EVENT.CONNECTION, async (socket: Socket<DefaultEventsMap>) => {
+      const { User } = socket.handshake.query;
+      const userId = User as string;
 
-        try {
-          // Clean up any previous socket for this user
-          const user_previous_socket = await RedisService.instance.getUserSocket(
-            userId
-          );
-          if (user_previous_socket) {
-            await RedisService.instance.delete(userId);
-          }
-
-          // Store new socket mapping with 1 hour TTL (safety measure, should be cleaned up on disconnect)
-          await RedisService.instance.set(userId, socket.id, 3600);
-
-          this.setupEventHandlers(socket);
-          socket.emit(WS_EVENT.CONNECTION, { 
-            message: "Connected to socket",
-            socketId: socket.id,
-            userId: userId
-          });
-
-          console.log(`User ${userId} successfully connected with socket ${socket.id}`);
-        } catch (error) {
-          console.error("Error setting up socket connection:", error);
-          socket.emit("error", { message: "Failed to establish connection" });
+      try {
+        const previousSocket = await RedisService.instance.getUserSocket(userId);
+        if (previousSocket) {
+          await RedisService.instance.delete(userId);
         }
 
-        // Handle disconnection
-        socket.on("disconnect", async (reason) => {
-          console.log(`Socket ${socket.id} disconnected. Reason: ${reason}`);
-          try {
-            await RedisService.instance.delete(userId);
-          } catch (error) {
-            console.error("Error cleaning up socket on disconnect:", error);
-          }
+        await RedisService.instance.set(userId, socket.id, 3600);
+
+        this.setupEventHandlers(socket);
+        socket.emit(WS_EVENT.CONNECTION, {
+          message: "Connected to socket",
+          socketId: socket.id,
+          userId,
         });
 
-        // Handle chat join
-        socket.on(WS_EVENT.CHAT_JOIN, async (data: any) => {
-          try {
-            console.log(`User ${userId} joining chat ${data.chatID}`);
-
-            // Join the room
-            await socket.join(data.chatID);
-            console.log(`Socket ${socket.id} joined room ${data.chatID}`);
-
-            // Get messages for the chat
-            const messages = await new RecycleService().getRecycleChatMessages({
-              chatID: data.chatID,
-            });
-
-            console.log(
-              `Sending ${messages?.length || 0} messages to user in chat ${
-                data.chatID
-              }`
-            );
-
-            // Send messages directly to this socket (not to the room)
-            socket.emit(WS_EVENT.CHAT_MESSAGE, {
-              messages,
-              chatID: data.chatID,
-            });
-
-            socket.emit(WS_EVENT.ROOM_JOINED, {
-              room: data.chatID,
-              message: `Successfully joined room ${data.chatID}`,
-            });
-
-            // Optionally notify other users in the room that someone joined
-            socket.to(data.chatID).emit(WS_EVENT.USER_JOINED_CHAT, {
-              userId,
-              chatID: data.chatID,
-              message: `User ${userId} joined the chat`,
-            });
-          } catch (error) {
-            console.error("Error joining chat:", error);
-            socket.emit("error", { message: "Failed to join chat" });
-          }
-        });
-
-        // Handle sending messages to a chat
-        socket.on(WS_EVENT.SEND_CHAT_MESSAGE, async (data: any) => {
-          try {
-            console.log(
-              `User ${userId} sending message to chat ${data.chatID}`
-            );
-
-            // Save the message (if needed)
-            // const savedMessage = await new RecycleService().saveMessage(data);
-            // Emit to all users in the chat room (including sender)
-
-            this.io.to(data.chatID).emit(WS_EVENT.CHAT_MESSAGE, {
-              message: data.message,
-              userID: userId,
-              senderID: userId,
-              chatID: data.chatID,
-              timestamp: new Date(),
-            });
-
-            new RecycleService().sendRecycleChatMessage({
-              message: data.message,
-              userID: userId,
-              chatID: data.chatID,
-            });
-          } catch (error) {
-            console.error("Error sending message:", error);
-            socket.emit("error", { message: "Failed to send message" });
-          }
-        });
+        logger.debug({ userId, socketId: socket.id }, "user connected");
+      } catch (error) {
+        logger.error({ err: error, socketId: socket.id }, "socket connection setup failed");
+        socket.emit("error", { message: "Failed to establish connection" });
       }
-    );
+
+      socket.on("disconnect", async (reason) => {
+        logger.debug({ socketId: socket.id, reason }, "socket disconnected");
+        try {
+          await RedisService.instance.delete(userId);
+        } catch (error) {
+          logger.error({ err: error, socketId: socket.id }, "socket cleanup on disconnect failed");
+        }
+      });
+
+      socket.on(WS_EVENT.CHAT_JOIN, async (data: { chatID: string }) => {
+        try {
+          await socket.join(data.chatID);
+
+          const messages = await recycleService.getRecycleChatMessages({ chatID: data.chatID });
+
+          socket.emit(WS_EVENT.CHAT_MESSAGE, { messages, chatID: data.chatID });
+          socket.emit(WS_EVENT.ROOM_JOINED, {
+            room: data.chatID,
+            message: `Successfully joined room ${data.chatID}`,
+          });
+          socket.to(data.chatID).emit(WS_EVENT.USER_JOINED_CHAT, {
+            userId,
+            chatID: data.chatID,
+          });
+        } catch (error) {
+          logger.error({ err: error, userId, chatID: data.chatID }, "chat join failed");
+          socket.emit("error", { message: "Failed to join chat" });
+        }
+      });
+
+      socket.on(WS_EVENT.SEND_CHAT_MESSAGE, async (data: { chatID: string; message: string }) => {
+        try {
+          this.io.to(data.chatID).emit(WS_EVENT.CHAT_MESSAGE, {
+            message: data.message,
+            userID: userId,
+            senderID: userId,
+            chatID: data.chatID,
+            timestamp: new Date(),
+          });
+
+          await recycleService.sendRecycleChatMessage({
+            message: data.message,
+            userID: userId,
+            chatID: data.chatID,
+          });
+        } catch (error) {
+          logger.error({ err: error, userId, chatID: data.chatID }, "send chat message failed");
+          socket.emit("error", { message: "Failed to send message" });
+        }
+      });
+    });
   }
 
   public setupEventHandlers(socket: Socket) {
-    socket.on(WS_EVENT.JOIN, async (room) => {
-      console.log("User joining room:", room);
+    socket.on(WS_EVENT.JOIN, async (room: string) => {
       try {
         await socket.join(room);
-        console.log(`Socket ${socket.id} successfully joined room ${room}`);
-
-        // Notify others in the room
-        socket.to(room).emit(WS_EVENT.USER_JOINED_ROOM, {
-          socketId: socket.id,
-          room,
-        });
+        socket.to(room).emit(WS_EVENT.USER_JOINED_ROOM, { socketId: socket.id, room });
       } catch (error) {
-        console.error("Error joining room:", error);
+        logger.error({ err: error, socketId: socket.id, room }, "room join failed");
         socket.emit("error", { message: `Failed to join room ${room}` });
       }
     });
   }
 
-  async emitEventToClient(userId: string, event: string, data: any) {
+  async emitEventToClient(userId: string, event: string, data: unknown) {
     const socketId = await RedisService.instance.getUserSocket(userId);
-    if (socketId) {
-      const targetSocket = this.io.sockets.sockets.get(socketId);
-      if (targetSocket) {
-        targetSocket.emit(event, data);
-        console.log(`Emitted ${event} to user ${userId} (socket: ${socketId})`);
-      } else {
-        console.log(`Socket ${socketId} not found for user ${userId}`);
-      }
+    if (!socketId) return;
+
+    const targetSocket = this.io.sockets.sockets.get(socketId);
+    if (targetSocket) {
+      targetSocket.emit(event, data);
     } else {
-      console.log(`No socket found for user ${userId}`);
+      await RedisService.instance.delete(userId);
     }
   }
 
-  emitEventToAll(event: string, data: any) {
+  emitEventToAll(event: string, data: unknown) {
     this.io.emit(event, data);
-    console.log(`Emitted ${event} to all connected clients`);
   }
 
-  emitToGroup(group: string, event: string, data: any) {
+  emitToGroup(group: string, event: string, data: unknown) {
     this.io.to(group).emit(event, data);
-    console.log(`Emitted ${event} to group ${group}`);
   }
 
-  // Helper method to check room membership
   async getRoomMembers(room: string) {
     const sockets = await this.io.in(room).fetchSockets();
-    return sockets.map((socket) => ({
-      socketId: socket.id,
-      userId: socket.handshake.query.User,
+    return sockets.map((s) => ({
+      socketId: s.id,
+      userId: s.handshake.query.User,
     }));
-  }
-
-  // Get connection statistics
-  getConnectionStats() {
-    return {
-      connectedClients: this.io.engine.clientsCount,
-      totalConnections: this.io.sockets.sockets.size,
-      timestamp: new Date().toISOString()
-    };
-  }
-
-  // Test connection method for external users
-  testConnection() {
-    this.io.emit('connection_test', {
-      message: 'Socket.IO server is working',
-      timestamp: new Date().toISOString(),
-      serverTime: Date.now()
-    });
   }
 }
 
@@ -219,26 +147,12 @@ export async function socketUserMiddleware(
   socket: Socket,
   next: (err?: Error) => void
 ) {
-  try {
-    let { user } = socket.handshake.query;
-    user = user as string;
+  const { user } = socket.handshake.query;
 
-    // Allow anonymous connections for external users
-    if (!user) {
-      // Generate a temporary user ID for anonymous connections
-      user = `anonymous_${socket.id}`;
-      console.log(`Anonymous user connected with socket ${socket.id}`);
-    }
-
-    socket.handshake.query.User = user;
-    console.log(`User ${user} authenticated for socket ${socket.id}`);
-    next();
-  } catch (error) {
-    console.error("Socket authentication error:", error);
-    if (error instanceof Error) {
-      next(error);
-    } else {
-      next(new Error("Authentication failed"));
-    }
+  if (!user || typeof user !== "string") {
+    return next(new Error("Authentication required: missing user query parameter"));
   }
+
+  socket.handshake.query.User = user;
+  next();
 }

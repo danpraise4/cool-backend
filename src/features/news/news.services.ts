@@ -1,52 +1,40 @@
 import prismaClient from "../../infastructure/database/postgreSQL/connect";
 import { AzureBlobService } from "../../shared/services/azure/blobstorage.service";
-
 import { ICommunityCreateNews } from "./news.interfase";
-import { Admin, News } from "@prisma/client";
-
+import { Admin, News, Status } from "@prisma/client";
 import { v4 } from "uuid";
 import { BlobResponse } from "../../shared/services/azure/blobstorage.model";
+import AppException from "../../infastructure/https/exception/app.exception";
+import httpStatus from "http-status";
 
 export class NewsService {
-  constructor() {}
+  public async createNews(config: { admin: Admin; post: ICommunityCreateNews }) {
+    const uploads: BlobResponse[] = [];
 
-  public async createNews(cofig: { admin: Admin; post: ICommunityCreateNews }) {
-    const _file = v4();
-    let _uploads: BlobResponse[] = [];
-
-    if (cofig.post.image && cofig.post.image.length > 0) {
-      // Upload each image and collect responses
-      for (const image of cofig.post.image) {
-        const _upload = await AzureBlobService.instance.uploadBase64Image(
+    if (config.post.image?.length) {
+      for (const image of config.post.image) {
+        const upload = await AzureBlobService.instance.uploadBase64Image(
           image,
-          `${_file}-${_uploads.length}`,
+          `${v4()}-${uploads.length}`,
           "image/png"
         );
-        _uploads.push(_upload);
+        uploads.push(upload);
       }
     }
 
-    const post = await prismaClient.news.create({
+    return prismaClient.news.create({
       data: {
-        title: cofig.post.title,
-        body: cofig.post.body,
-        adminId: cofig.admin.id,
-        media:
-          _uploads.length > 0
-            ? _uploads.map((upload) => ({
-                url: upload.url,
-                name: upload.blobName,
-              }))
-            : [],
+        title: config.post.title,
+        body: config.post.body,
+        adminId: config.admin.id,
+        media: uploads.map((u) => ({ url: u.url, name: u.blobName })),
       },
     });
-
-    return post;
   }
 
   public async getNews(
-    page: number = 1,
-    pageSize: number = 20
+    page = 1,
+    pageSize = 20
   ): Promise<{
     news: News[];
     meta: {
@@ -56,21 +44,21 @@ export class NewsService {
       totalPages: number;
     };
   }> {
-    const skip = Number((page - 1) * pageSize); // Ensure skip is a number
-    const take = Number(pageSize); // Ensure take is a number
+    const skip = (page - 1) * pageSize;
+    const where = { status: { not: Status.DELETED } };
 
-    const posts = await prismaClient.news.findMany({
-      skip,
-      take,
-      orderBy: { createdAt: "desc" }, // Order posts by latest
-    });
-
-    const totalPosts = await prismaClient.news.count(); // Total post count for pagination
+    const [posts, totalPosts] = await Promise.all([
+      prismaClient.news.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: "desc" },
+      }),
+      prismaClient.news.count({ where }),
+    ]);
 
     return {
-      news: posts.map((post) => ({
-        ...post,
-      })),
+      news: posts,
       meta: {
         currentPage: page,
         pageSize,
@@ -80,25 +68,20 @@ export class NewsService {
     };
   }
 
-  public async deleteNews(id: string, adminId: string): Promise<News | null> {
-    const post = await prismaClient.news.findFirst({
-      where: { id, adminId },
-    });
+  public async deleteNews(id: string, adminId: string): Promise<News> {
+    const post = await prismaClient.news.findFirst({ where: { id, adminId } });
 
     if (!post) {
-      throw new Error(
-        "Post not found or you don't have permission to delete it"
+      throw new AppException(
+        "News not found or you don't have permission",
+        httpStatus.NOT_FOUND
       );
     }
 
-    const deletedPost = await prismaClient.news.update({
+    return prismaClient.news.update({
       where: { id },
-      data: {
-        status: "DELETED",
-      },
+      data: { status: Status.DELETED },
     });
-
-    return deletedPost;
   }
 
   public async updateNews(config: {
@@ -106,59 +89,43 @@ export class NewsService {
     adminId: string;
     post: ICommunityCreateNews;
   }) {
-    const existingPost = await prismaClient.news.findFirst({
-      where: {
-        id: config.id,
-        adminId: config.adminId,
-      },
+    const existing = await prismaClient.news.findFirst({
+      where: { id: config.id, adminId: config.adminId },
     });
 
-    if (!existingPost) {
-      throw new Error(
-        "Post not found or you don't have permission to update it"
+    if (!existing) {
+      throw new AppException(
+        "News not found or you don't have permission",
+        httpStatus.NOT_FOUND
       );
     }
 
-    let media = existingPost.media;
+    let media = existing.media as { url: string; name: string }[];
 
-    if (config.post.image && config.post.image.length > 0) {
-      const _file = v4();
-      let _uploads: BlobResponse[] = [];
-
-      // Upload each image and collect responses
+    if (config.post.image?.length) {
+      const uploads: BlobResponse[] = [];
       for (const image of config.post.image) {
-        const _upload = await AzureBlobService.instance.uploadBase64Image(
+        const upload = await AzureBlobService.instance.uploadBase64Image(
           image,
-          `${_file}-${_uploads.length}`,
+          `${v4()}-${uploads.length}`,
           "image/png"
         );
-        _uploads.push(_upload);
+        uploads.push(upload);
       }
-
-      media = _uploads.map((upload) => ({
-        url: upload.url,
-        name: upload.blobName,
-      }));
+      media = uploads.map((u) => ({ url: u.url, name: u.blobName }));
     }
 
-    const updatedPost = await prismaClient.news.update({
+    return prismaClient.news.update({
       where: { id: config.id },
-      data: {
-        body: config.post.body,
-        media,
-      },
+      data: { body: config.post.body, title: config.post.title, media },
     });
-
-    return updatedPost;
   }
 
-  public async getNewsById(id: string): Promise<News | null> {
-    const post = await prismaClient.news.findFirst({
-      where: { id },
-    });
+  public async getNewsById(id: string): Promise<News> {
+    const post = await prismaClient.news.findFirst({ where: { id } });
 
     if (!post) {
-      throw new Error("Post not found");
+      throw new AppException("News not found", httpStatus.NOT_FOUND);
     }
 
     return post;

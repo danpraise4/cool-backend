@@ -1,54 +1,40 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import http from "http";
 import app from "./app";
 import { Server } from "socket.io";
-
 import config from "./shared/config/app.config";
 import RedisService from "./shared/services/redis.service";
 import { AzureBlobService } from "./shared/services/azure/blobstorage.service";
-import WS, {
-  socketUserMiddleware,
-} from "./shared/services/socket/socket.service";
+import WS, { socketUserMiddleware } from "./shared/services/socket/socket.service";
+import logger from "./shared/services/logger";
+import "./shared/jobs";
 
-import './shared/jobs';
-
-// Use PORT from env (Koyeb/Cloud Run set this; often 8000); fallback 8080 for local
-const port: number = Number(process.env.PORT || config.PORT) || 8080;
-const host = "0.0.0.0"; // required for containers so health checks can reach the app
+const port = Number(process.env.PORT || config.PORT) || 8080;
+const host = "0.0.0.0";
 
 const server = http.createServer(app);
 
-// Initialize Redis
 RedisService.getInstance();
 RedisService.instance.checkConnection();
 
-// Configure Socket.IO with proper CORS and transport options
 const io = new Server(server, {
   cors: {
-    origin: "*", // Allow all origins for external users
+    origin: config.CORS_ORIGIN === "*" ? true : config.CORS_ORIGIN.split(",").map((o) => o.trim()),
     methods: ["GET", "POST"],
-    allowedHeaders: ["*"],
-    credentials: true
+    credentials: true,
   },
-  transports: ["websocket", "polling"], // Enable both WebSocket and polling
-  allowEIO3: true, // Allow Engine.IO v3 clients
-  pingTimeout: 60000, // 60 seconds
-  pingInterval: 25000, // 25 seconds
-  upgradeTimeout: 10000, // 10 seconds
-  maxHttpBufferSize: 1e6, // 1MB
+  transports: ["websocket", "polling"],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  upgradeTimeout: 10000,
+  maxHttpBufferSize: 1e6,
   allowUpgrades: true,
-  perMessageDeflate: {
-    threshold: 1024,
-    concurrencyLimit: 10,
-    memLevel: 7
-  }
+  perMessageDeflate: { threshold: 1024, concurrencyLimit: 10, memLevel: 7 },
 });
 
 io.use(socketUserMiddleware);
 WS.getInstance(io);
 
-
-// Initialize Azure Blob Service (non-blocking; server starts even if blob is unavailable)
 try {
   AzureBlobService.getInstance(
     config.CLOUDINARY.CLOUD_NAME,
@@ -57,39 +43,34 @@ try {
     config.CLOUDINARY.UPLOAD_PRESET
   );
 } catch (err) {
-  console.warn("Azure Blob Service init skipped (server will continue):", (err as Error)?.message);
+  logger.warn({ err }, "Storage service init skipped — server will continue");
 }
 
-// Handle server errors
 server.on("error", (error) => {
-  console.error("Server error:", error);
+  logger.error({ error }, "HTTP server error");
 });
 
 server.listen(port, host, () => {
-  console.info(`App is running on http://${host}:${port}`);
+  logger.info(`${config.APP_NAME} running on http://${host}:${port} [${config.NODE_ENV}]`);
 });
 
-const exitHandler = () => {
-  if (server) {
-    server.close(() => {
-      console.error("Server closed");
-      process.exit(1);
-    });
-  } else {
-    process.exit(1);
-  }
+const shutdown = (signal: string) => {
+  logger.info(`${signal} received — shutting down gracefully`);
+  server.close(() => {
+    logger.info("HTTP server closed");
+    process.exit(0);
+  });
 };
 
-const unexpectedErrorHandler = (error: any) => {
-  console.error(error);
-  exitHandler();
-};
-
-process.on("uncaughtException", unexpectedErrorHandler);
-process.on("unhandledRejection", unexpectedErrorHandler);
-
-process.on("SIGTERM", () => {
-  if (server) {
-    server.close();
-  }
+process.on("uncaughtException", (error) => {
+  logger.fatal({ error }, "Uncaught exception");
+  shutdown("uncaughtException");
 });
+
+process.on("unhandledRejection", (reason) => {
+  logger.fatal({ reason }, "Unhandled rejection");
+  shutdown("unhandledRejection");
+});
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

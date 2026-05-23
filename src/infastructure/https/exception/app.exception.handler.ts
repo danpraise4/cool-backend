@@ -1,61 +1,51 @@
-import { NextFunction, Request, Response } from 'express';
-import { ErrorRequestHandler } from 'express-serve-static-core';
-import httpStatus from 'http-status';
-import AppException from './app.exception';
-
-export interface Error {
-  statusCode: number;
-  status: string;
-  message: string;
-  error?: string;
-  stack?: string;
-  isOperational?: boolean;
-}
-
-function setDevError(err: Error, res: Response) {
-  return res.status(err.statusCode).send({
-    status: err.status,
-    message: err.message,
-    error: err,
-    error_stack: err.stack,
-  });
-}
-
-function setProductionError(err: Error, res: Response) {
-  return res.status(err.statusCode).send({
-    status: err.status,
-    message: err.message,
-  });
-}
+import { NextFunction, Request, Response } from "express";
+import { ErrorRequestHandler } from "express-serve-static-core";
+import httpStatus from "http-status";
+import AppException from "./app.exception";
+import logger from "../../../shared/services/logger";
 
 export const ErrorConverter = (
-  err: any,
+  err: unknown,
   _req: Request,
   _res: Response,
-  next: NextFunction,
-) => {
-  let error = err;
-  if (!(error instanceof AppException)) {
-    const statusCode = error.statusCode || httpStatus.BAD_REQUEST;
-    const message = error.message || statusCode;
-    error = new AppException(message, statusCode);
+  next: NextFunction
+): void => {
+  if (err instanceof AppException) {
+    return next(err);
   }
-  next(error);
+
+  const anyErr = err as { statusCode?: number; message?: string; stack?: string };
+  const statusCode = anyErr.statusCode || httpStatus.INTERNAL_SERVER_ERROR;
+  const message = anyErr.message || "An unexpected error occurred";
+  const converted = new AppException(message, statusCode);
+  converted.stack = anyErr.stack;
+  next(converted);
 };
 
 export const ErrorHandler: ErrorRequestHandler = (
-  err: Error,
-  _req: Request,
+  err: AppException,
+  req: Request,
   res: Response,
-  next: NextFunction,
-) => {
-  err.statusCode = err.statusCode || httpStatus.BAD_REQUEST;
-  err.status = err.status || 'error';
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _next: NextFunction
+): void => {
+  const statusCode = err.statusCode || httpStatus.INTERNAL_SERVER_ERROR;
+  const message = err.message || "An unexpected error occurred";
 
-  if (process.env.NODE_ENV === 'development') {
-    setDevError(err, res);
-  } else if (process.env.NODE_ENV === 'production') {
-    setProductionError(err, res);
+  if (statusCode >= 500) {
+    logger.error({ err, req: { method: req.method, url: req.originalUrl } }, message);
+  } else {
+    logger.warn({ statusCode, url: req.originalUrl }, message);
   }
-  next();
+
+  const body: Record<string, unknown> = {
+    success: false,
+    message,
+  };
+
+  if (process.env.NODE_ENV === "development") {
+    body.stack = err.stack;
+  }
+
+  res.status(statusCode).json(body);
 };

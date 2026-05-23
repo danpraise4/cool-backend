@@ -1,5 +1,8 @@
-import { Expo } from "expo-server-sdk";
+import { Expo, ExpoPushMessage, ExpoPushTicket } from "expo-server-sdk";
 import prismaClient from "../../../infastructure/database/postgreSQL/connect";
+import logger from "../logger";
+
+const expo = new Expo({ useFcmV1: true });
 
 export default class PushService {
   public static instance: PushService;
@@ -13,52 +16,39 @@ export default class PushService {
     return this.instance;
   }
 
-  // Send to Single User listed
-  async emitNotficationToClient(
+  async emitNotificationToClient(
     uid: string,
     header: { title: string; body: string },
-    data?: { [key: string]: string }
-  ) {
-    const user = await prismaClient.user.findUnique({
-      where: {
-        id: uid,
-      },
-    });
-    if (!user.deviceToken) return;
+    data?: Record<string, string>
+  ): Promise<ExpoPushTicket[]> {
+    const user = await prismaClient.user.findUnique({ where: { id: uid } });
 
-    let expo = new Expo({
-      //   accessToken: config.expoAccessToken,
-      useFcmV1: true,    
-    });
+    if (!user?.deviceToken || !Expo.isExpoPushToken(user.deviceToken)) {
+      return [];
+    }
 
-    if (Expo.isExpoPushToken(user.deviceToken)) {
-      console.log("Sending to", user.deviceToken);
-      let messages = [];
-      messages.push({
+    const messages: ExpoPushMessage[] = [
+      {
         to: user.deviceToken,
         sound: "default",
         title: header.title,
         body: header.body,
         data: data ?? {},
-      });
+      },
+    ];
 
-      // The Expo push notification service accepts batches of notifications so
+    const chunks = expo.chunkPushNotifications(messages);
+    const tickets: ExpoPushTicket[] = [];
 
-      let chunks = expo.chunkPushNotifications(messages);
-      let tickets = [];
-      (async () => {
-        for (let chunk of chunks) {
-          try {
-            let ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-            console.log(ticketChunk);
-            tickets.push(...ticketChunk);
-          } catch (error) {
-            console.error(error);
-          }
-        }
-      })();
-
-      return;
+    for (const chunk of chunks) {
+      try {
+        const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+        tickets.push(...ticketChunk);
+      } catch (error) {
+        logger.error({ err: error, uid }, "push notification chunk failed");
+      }
     }
+
+    return tickets;
   }
 }

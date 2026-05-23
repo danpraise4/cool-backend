@@ -1,103 +1,85 @@
-import express, { Application, NextFunction, Request, Response } from 'express';
-import cors from 'cors';
-import enforce from 'express-sslify';
-
-import morgan from 'morgan';
-import hpp from 'hpp';
-import rateLimit from 'express-rate-limit';
-import helmet from 'helmet';
-import httpStatus from 'http-status';
-import { ENVIRONMENT_TYPE } from './shared/config/app.constants';
-import config from './shared/config/app.config';
-import router from './infastructure/https/routes/routes.module';
-import { ErrorConverter, ErrorHandler } from './infastructure/https/exception/app.exception.handler';
-import AppException from './infastructure/https/exception/app.exception';
+import express, { Application, NextFunction, Request, Response } from "express";
+import cors from "cors";
+import enforce from "express-sslify";
+import pinoHttp from "pino-http";
+import hpp from "hpp";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
+import httpStatus from "http-status";
+import { ENVIRONMENT_TYPE } from "./shared/config/app.constants";
+import config from "./shared/config/app.config";
+import router from "./infastructure/https/routes/routes.module";
+import { ErrorConverter, ErrorHandler } from "./infastructure/https/exception/app.exception.handler";
+import AppException from "./infastructure/https/exception/app.exception";
+import logger from "./shared/services/logger";
 
 const app: Application = express();
 
-
-function getClientIP(req: Request) {
-  const header = req.headers['x-forwarded-for'] as string;
-  if (header) {
-    const ips = header.split(',');
-    return ips[0];
-  }
-  return req.connection.remoteAddress;
-}
-
-const corsOriginSetting = config.CORS_ORIGIN || "*";
 const corsOrigin =
-  corsOriginSetting === "*"
+  config.CORS_ORIGIN === "*"
     ? true
-    : corsOriginSetting.split(",").map((o) => o.trim()).filter(Boolean);
+    : config.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
 
 app.use(
   cors({
     origin: corsOrigin,
     credentials: true,
     methods: ["GET", "PUT", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Origin",
-      "X-Requested-With",
-      "Content-Type",
-      "Accept",
-      "Authorization",
-    ],
+    allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"],
   })
 );
 
-if (config.ENVIRONMENT === ENVIRONMENT_TYPE.PRODUCTION || config.ENVIRONMENT === ENVIRONMENT_TYPE.STAGING) {
+if (
+  config.ENVIRONMENT === ENVIRONMENT_TYPE.PRODUCTION ||
+  config.ENVIRONMENT === ENVIRONMENT_TYPE.STAGING
+) {
   app.use(enforce.HTTPS({ trustProtoHeader: true }));
 }
 
-if (config.ENVIRONMENT === ENVIRONMENT_TYPE.DEVELOPMENT) {
-  app.use(morgan("dev"));
-} else {
-  app.use(morgan("combined"));
-}
+app.use(
+  pinoHttp({
+    logger,
+    redact: ["req.headers.authorization"],
+    customLogLevel: (_req, res) => {
+      if (res.statusCode >= 500) return "error";
+      if (res.statusCode >= 400) return "warn";
+      return "info";
+    },
+  })
+);
 
 app.use(express.json({ limit: "10MB" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(hpp());
 app.use(helmet());
+app.disable("x-powered-by");
 
-// Rate Limiter (failed / error responses; tune via API_RATE_LIMIT_MAX in env)
 if (config.ENVIRONMENT === ENVIRONMENT_TYPE.PRODUCTION) {
-  const maxRequests = config.API_RATE_LIMIT_MAX ?? 400;
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: maxRequests,
+    max: config.API_RATE_LIMIT_MAX,
     skipSuccessfulRequests: true,
-    keyGenerator: (req) => getClientIP(req),
-    message: "Too many requests from this IP, please try again later.",
+    keyGenerator: (req) => {
+      const forwarded = req.headers["x-forwarded-for"] as string;
+      return forwarded ? forwarded.split(",")[0].trim() : req.socket.remoteAddress ?? "unknown";
+    },
+    message: { success: false, message: "Too many requests, please try again later." },
   });
   app.use("/api", limiter);
 }
 
-// Disable XSRF protection
-app.disable('x-powered-by');
-app.get('/', (_req, res) => {
-  res.send(`<b>Welcome to ${config.APP_NAME}</b>`);
+app.get("/", (_req, res) => {
+  res.json({ service: config.APP_NAME, status: "ok" });
 });
 
-// Socket.IO health check endpoint
-app.get('/socket.io/health', (_req, res) => {
-  res.json({ 
-    status: 'ok', 
-    message: 'Socket.IO server is running',
-    timestamp: new Date().toISOString()
-  });
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// v1 Routes
-app.use('/api/v1', router);
-app.all('*', (req: Request, _res: Response, next: NextFunction) => {
-  return next(
-    new AppException(
-      `Cant find ${req.originalUrl} on the server.`,
-      httpStatus.NOT_FOUND
-    )
-  );
+app.use("/api/v1", router);
+
+app.all("*", (req: Request, _res: Response, next: NextFunction) => {
+  next(new AppException(`Route ${req.originalUrl} not found`, httpStatus.NOT_FOUND));
 });
 
 app.use(ErrorConverter);

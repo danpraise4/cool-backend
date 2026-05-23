@@ -21,9 +21,6 @@ export class FacilitiesService {
     Longitude: string | undefined;
   }): Promise<IAdminServiceFacility> {
 
-    console.log(config);
-    console.log("Config");
-
     const facilities = await this.AdminClient.getFacilities({
       MaterialId: config.materialId,
       Latitude: config.Latitude,

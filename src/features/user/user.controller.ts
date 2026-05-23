@@ -1,34 +1,27 @@
 import { NextFunction, Response } from "express";
 import { UserService } from "./user.services";
-import StatusCodes from "http-status";
-import { RequestType } from "../../shared/helper/helper";
-import AppException from "../../infastructure/https/exception/app.exception";
 import httpStatus from "http-status";
+import { RequestType } from "../../shared/helper/helper";
+import { sendSuccess } from "../../shared/helper/response";
 import pick from "../../shared/helper/pick";
 
 export class UserController {
-  constructor(private readonly userService: UserService) { }
+  constructor(private readonly userService: UserService) {}
 
-  public getUser = async (
-    req: RequestType,
-    res: Response,
-    next: NextFunction
-  ) => {
+  public getUser = async (req: RequestType, res: Response, next: NextFunction) => {
     try {
-      const user = await this.userService.getUserById(req.user.id);
-      const settings = await this.userService.getUserSettings(req.user.id);
-
-      res.status(StatusCodes.OK).json({
+      const [user, settings] = await Promise.all([
+        this.userService.getUserById(req.user.id),
+        this.userService.getUserSettings(req.user.id),
+      ]);
+      sendSuccess(res, httpStatus.OK, {
         message: "User fetched successfully",
         data: { user, settings },
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
-
 
   public updateDeviceToken = async (
     req: RequestType,
@@ -36,58 +29,37 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-      const deviceToken = req.body.deviceToken;
-      const userId = req.user.id;
-      const updatedUser = await this.userService.updateDeviceToken(deviceToken, userId);
-
-      res.status(StatusCodes.OK).json({
+      const updated = await this.userService.updateDeviceToken(
+        req.body.deviceToken,
+        req.user.id
+      );
+      sendSuccess(res, httpStatus.OK, {
         message: "Device token updated successfully",
-        data: updatedUser,
+        data: updated,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
-  public uploadImage = async (
-    req: RequestType,
-    res: Response,
-    next: NextFunction
-  ) => {
+  public uploadImage = async (req: RequestType, res: Response, next: NextFunction) => {
     try {
-      const image = req.body.image;
-      const userId = req.user.id;
-      const updatedUser = await this.userService.uploadImage(image, userId);
-
-      res.status(StatusCodes.OK).json({
+      const updated = await this.userService.uploadImage(req.body.image, req.user.id);
+      sendSuccess(res, httpStatus.OK, {
         message: "Image uploaded successfully",
-        data: updatedUser,
+        data: updated,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
-  public deleteUser = async (
-    req: RequestType,
-    res: Response,
-    next: NextFunction
-  ) => {
+  public deleteUser = async (req: RequestType, res: Response, next: NextFunction) => {
     try {
-      const userId = req.user.id;
-      const deletedUser = await this.userService.deleteUser(userId);
-      res.status(StatusCodes.OK).json({
-        message: "User deleted successfully",
-        data: deletedUser,
-      });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+      const result = await this.userService.deleteUser(req.user.id);
+      sendSuccess(res, httpStatus.OK, { message: "Account deleted successfully", data: result });
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -97,17 +69,13 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-      const location = req.body.location;
-      const userId = req.user.id;
-      const updatedUser = await this.userService.updateLocation(location, userId);
-      res.status(StatusCodes.OK).json({
+      const updated = await this.userService.updateLocation(req.body.location, req.user.id);
+      sendSuccess(res, httpStatus.OK, {
         message: "Location updated successfully",
-        data: updatedUser,
+        data: updated,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -117,39 +85,22 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-      const user = req.user;
-      const data = await this.userService.updateSettings(user, req.body);
-      res.status(httpStatus.OK).json({
-        status: "success",
-        message: "Settings updated successfully",
-        data,
-      });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+      const data = await this.userService.updateSettings(req.user, req.body);
+      sendSuccess(res, httpStatus.OK, { message: "Settings updated successfully", data });
+    } catch (error) {
+      next(error);
     }
   };
 
-  public updateUser = async (
-    req: RequestType,
-    res: Response,
-    next: NextFunction
-  ) => {
+  public updateUser = async (req: RequestType, res: Response, next: NextFunction) => {
     try {
-      const updatedUser = await this.userService.updateUser({
-        ...req.body,
-        id: req.user.id,
-      });
-
-      res.status(StatusCodes.OK).json({
+      const updated = await this.userService.updateUser({ ...req.body, id: req.user.id });
+      sendSuccess(res, httpStatus.OK, {
         message: "User updated successfully",
-        data: { user: updatedUser },
+        data: { user: updated },
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -159,24 +110,13 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-
-      const homePage = await this.userService.getHomeCharities(
-        req.user,
-        {
-          Latitude: Number(req.query.Latitude as never),
-          Longitude: Number(req.query.Longitude as never),
-        }
-      );
-
-      res.status(StatusCodes.OK).json({
-        status: "success",
-        message: "Home page fetched successfully",
-        data: homePage,
+      const data = await this.userService.getHomeCharities(req.user, {
+        Latitude: Number(req.query.Latitude),
+        Longitude: Number(req.query.Longitude),
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+      sendSuccess(res, httpStatus.OK, { message: "Charities fetched successfully", data });
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -186,16 +126,10 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-      const homePage = await this.userService.getHomeHeroes(req.user);
-      res.status(StatusCodes.OK).json({
-        status: "success",
-        message: "Home page fetched successfully",
-        data: homePage,
-      });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+      const data = await this.userService.getHomeHeroes(req.user);
+      sendSuccess(res, httpStatus.OK, { message: "Heroes fetched successfully", data });
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -205,23 +139,13 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-
-      const homePage = await this.userService.getHomeTopDeals(req.user, {
-        Latitude: Number(req.query.Latitude as never),
-        Longitude: Number(req.query.Longitude as never),
+      const data = await this.userService.getHomeTopDeals(req.user, {
+        Latitude: Number(req.query.Latitude),
+        Longitude: Number(req.query.Longitude),
       });
-
-      console.log("homePage", homePage);
-
-      res.status(StatusCodes.OK).json({
-        status: "success",
-        message: "Home page fetched successfully",
-        data: homePage,
-      });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+      sendSuccess(res, httpStatus.OK, { message: "Top deals fetched successfully", data });
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -231,27 +155,14 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-      const params = pick(req.query, ["Latitude", "Longitude"]);
-
-
-
-      const homePage = await this.userService.getHomeFacilities(
-        req.user,
-        params
-      );
-      res.status(StatusCodes.OK).json({
-        status: "success",
-        message: "Home page fetched successfully",
-        data: homePage,
-      });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+      const params = pick(req.query as Record<string, string>, ["Latitude", "Longitude"]);
+      const data = await this.userService.getHomeFacilities(req.user, params);
+      sendSuccess(res, httpStatus.OK, { message: "Facilities fetched successfully", data });
+    } catch (error) {
+      next(error);
     }
   };
 
-  // Notifications
   public getNotifications = async (
     req: RequestType,
     res: Response,
@@ -259,15 +170,12 @@ export class UserController {
   ) => {
     try {
       const notifications = await this.userService.getNotifications(req.user);
-      res.status(StatusCodes.OK).json({
-        status: "success",
+      sendSuccess(res, httpStatus.OK, {
         message: "Notifications fetched successfully",
         data: notifications,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -277,20 +185,16 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-      const notificationId = req.params.id;
-      const notifications = await this.userService.markNotificationAsRead(
+      const notification = await this.userService.markNotificationAsRead(
         req.user,
-        notificationId
+        req.params.id
       );
-      res.status(StatusCodes.OK).json({
-        status: "success",
-        message: "Notifications marked as read successfully",
-        data: notifications,
+      sendSuccess(res, httpStatus.OK, {
+        message: "Notification marked as read",
+        data: notification,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -300,20 +204,16 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-      const notificationId = req.params.id;
-      const notifications = await this.userService.markNotificationAsUnread(
+      const notification = await this.userService.markNotificationAsUnread(
         req.user,
-        notificationId
+        req.params.id
       );
-      res.status(StatusCodes.OK).json({
-        status: "success",
-        message: "Notifications marked as unread successfully",
-        data: notifications,
+      sendSuccess(res, httpStatus.OK, {
+        message: "Notification marked as unread",
+        data: notification,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 }

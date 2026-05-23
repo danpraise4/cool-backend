@@ -8,121 +8,103 @@ import { IRegistration } from "../interfaces/auth.interface";
 import { OAuth2Client } from "google-auth-library";
 import config from "../../../shared/config/app.config";
 import { sanitizeIdentifier } from "../auth.utils";
+import AppException from "../../../infastructure/https/exception/app.exception";
+import httpStatus from "http-status";
 
 export const { GOOGLE } = config;
 
 export class AuthUserService {
-  constructor() { }
-
   private readonly otpService = new OtpService();
   private readonly encryptionService = new EncryptionService();
   private readonly tokenService = new TokenService();
 
-  // Google OAuth client
   private readonly googleClient = new OAuth2Client({
     clientId: GOOGLE.CLIENT_ID,
     clientSecret: GOOGLE.CLIENT_SECRET,
   });
 
   public async register(data: IRegistration) {
-    try {
-      const {
-        identifier,
+    const {
+      identifier,
+      firstName,
+      lastName,
+      password,
+      confirmPassword,
+      phone,
+      address,
+      cityOfResidence,
+      latitude,
+      longitude,
+      token: token_id,
+    } = data;
+    const email = identifier.trim().toLowerCase();
+
+    const existingUser = await prisma.user.findFirst({ where: { email } });
+
+    if (existingUser?.status === Status.DELETED) {
+      throw new AppException(
+        "Your account has been deleted. Please contact support.",
+        httpStatus.FORBIDDEN
+      );
+    }
+
+    if (existingUser) {
+      throw new AppException("This email is already registered", httpStatus.CONFLICT);
+    }
+
+    if (password !== confirmPassword) {
+      throw new AppException(
+        "Password and confirm password do not match",
+        httpStatus.BAD_REQUEST
+      );
+    }
+
+    const verifiedOtp = await this.otpService.getOtp(token_id);
+
+    if (!verifiedOtp || verifiedOtp.expiresAt < new Date()) {
+      throw new AppException("OTP has expired", httpStatus.BAD_REQUEST);
+    }
+
+    if (verifiedOtp.status !== STATUS.VERIFIED) {
+      throw new AppException("OTP not verified", httpStatus.BAD_REQUEST);
+    }
+
+    const hashedPassword = await this.encryptionService.hashPassword(password);
+
+    const newUser = await prisma.user.create({
+      data: {
+        email,
         firstName,
         lastName,
-        password,
-        confirmPassword,
-        phone,
+        password: hashedPassword,
+        isEmailVerified: true,
         address,
+        phone,
         cityOfResidence,
+        isPhoneVerified: false,
+        status: STATUS.COMPLETED,
         latitude,
         longitude,
-        token: token_id,
-      } = data;
-      const email = identifier.trim().toLowerCase();
+        locationAccuracy: LocationAccuracy.EXACT,
+      },
+    });
 
-      // Check for existing verified user
-      const existingUser = await prisma.user.findFirst({
-        where: {
-          email,
-        },
-      });
+    await this.otpService.deleteOtp(token_id);
 
-      if (existingUser) {
-        throw new Error("This email is already registered");
-      }
+    const token = await this.generateToken(
+      newUser.id,
+      `${newUser.firstName} ${newUser.lastName}`
+    );
 
-
-      if (existingUser?.status === Status.DELETED) {
-        throw Error("Your account has been deleted. Please contact support if you believe this is an error.");
-      }
-
-
-      if (password !== confirmPassword) {
-        throw new Error("Password and confirm password do not match");
-      }
-
-      // check the tokenn
-      const verifiedOtp = await this.otpService.getOtp(token_id);
-
-      if (!verifiedOtp) {
-        throw new Error("Invalid OTP");
-      }
-
-      if (verifiedOtp.expiresAt < new Date()) {
-        throw new Error("OTP expired");
-      }
-
-      if (verifiedOtp.status !== STATUS.VERIFIED) {
-        throw new Error("Invalid OTP");
-      }
-
-      const hashedPassword = await this.encryptionService.hashPassword(
-        password
-      );
-
-      const newUser = await prisma.user.create({
-        data: {
-          email,
-          firstName: firstName,
-          lastName: lastName,
-          password: hashedPassword,
-          isEmailVerified: true,
-          address: address,
-          phone: phone,
-          cityOfResidence: cityOfResidence,
-          isPhoneVerified: false,
-          status: STATUS.COMPLETED,
-          latitude: latitude,
-          longitude: longitude,
-          locationAccuracy: LocationAccuracy.EXACT,
-        },
-      });
-
-      await this.otpService.deleteOtp(token_id);
-
-      const token = await this.generateToken(
-        newUser.id,
-        `${newUser.firstName} ${newUser.lastName}`
-      );
-
-      return { user: newUser, token: token };
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`User registration failed: ${error.message}`);
-      }
-      throw new Error("An unexpected error occurred during registration");
-    }
+    return { user: newUser, token };
   }
 
   public async checkUser(identifier: string) {
-    const email = identifier.trim().toLowerCase().trim();
-    const user = await prisma.user.findFirst({
-      where: { email },
-    });
+    const email = identifier.trim().toLowerCase();
+    const user = await prisma.user.findFirst({ where: { email } });
 
     if (user) {
-      throw new Error("Email already in use");
+      throw new AppException("Email already in use", httpStatus.CONFLICT);
     }
 
     const otp = await this.otpService.createOtp(email);
@@ -131,12 +113,10 @@ export class AuthUserService {
 
   public async verifyOtp(identifier: string, otp: string) {
     const identifierData = sanitizeIdentifier(identifier);
-    const verifiedOtp = await this.otpService.verifyOtp(
-      identifierData.value,
-      otp
-    );
+    const verifiedOtp = await this.otpService.verifyOtp(identifierData.value, otp);
+
     if (!verifiedOtp) {
-      throw new Error("Invalid OTP");
+      throw new AppException("Invalid OTP", httpStatus.BAD_REQUEST);
     }
 
     return { otp: verifiedOtp };
@@ -144,34 +124,32 @@ export class AuthUserService {
 
   public async resendOtp(identifier: string) {
     const identifierData = sanitizeIdentifier(identifier);
-
     await this.otpService.deleteUserOtp(identifierData.value);
-
     const token_sent = await this.otpService.createOtp(identifierData.value);
     return { token: token_sent };
   }
 
   public async login(identifier: string, password: string) {
     const identifierData = sanitizeIdentifier(identifier);
-    
 
     const user = await prisma.user.findFirst({
       where: { [identifierData.type]: identifierData.value },
     });
 
     if (!user) {
-      throw Error("Please check email and password");
+      throw new AppException("Invalid email or password", httpStatus.UNAUTHORIZED);
     }
 
-    if (user?.status === Status.DELETED) {
-      throw Error("Your account has been deleted. Please contact support if you believe this is an error.");
+    if (user.status === Status.DELETED) {
+      throw new AppException(
+        "Your account has been deleted. Please contact support.",
+        httpStatus.FORBIDDEN
+      );
     }
-
 
     if (user.authType === AuthType.GOOGLE) {
-      throw Error("Please login with Google");
+      throw new AppException("Please sign in with Google", httpStatus.BAD_REQUEST);
     }
-
 
     const isPasswordValid = await this.encryptionService.comparePassword(
       user.password,
@@ -179,19 +157,14 @@ export class AuthUserService {
     );
 
     if (!isPasswordValid) {
-      throw Error("Invalid password");
+      throw new AppException("Invalid email or password", httpStatus.UNAUTHORIZED);
     }
 
-    return {
-      status: 200,
-      message: "Login successful",
-      user,
-    };
+    return { user };
   }
 
   public async generateToken(id: string, name: string) {
-    const token = await this.tokenService.generateToken(id, name);
-    return token;
+    return this.tokenService.generateToken(id, name);
   }
 
   public async logout(id: string) {
@@ -200,40 +173,50 @@ export class AuthUserService {
 
   public async updatePassword(
     user: User,
-    password: string,
+    newPassword: string,
     passwordConfirmation: string,
     oldPassword: string
   ) {
-    if (password !== passwordConfirmation) {
-      throw Error("The new password and confirmation password do not match");
+    if (newPassword !== passwordConfirmation) {
+      throw new AppException(
+        "New password and confirmation do not match",
+        httpStatus.BAD_REQUEST
+      );
     }
 
-    const _user = await prisma.user.findUnique({
-      where: { id: user.id },
-    });
+    const _user = await prisma.user.findUnique({ where: { id: user.id } });
 
-    const isPasswordValid = await this.encryptionService.comparePassword(
-      _user?.password,
+    if (!_user) {
+      throw new AppException("User not found", httpStatus.NOT_FOUND);
+    }
+
+    const isOldPasswordValid = await this.encryptionService.comparePassword(
+      _user.password,
       oldPassword
     );
 
-    if (!isPasswordValid) {
-      throw Error("Invalid old password");
+    if (!isOldPasswordValid) {
+      throw new AppException("Current password is incorrect", httpStatus.BAD_REQUEST);
     }
 
-    const hashedPassword = await this.encryptionService.hashPassword(password);
+    const isSamePassword = await this.encryptionService.comparePassword(
+      _user.password,
+      newPassword
+    );
 
-    if (hashedPassword == oldPassword)
-      throw Error("New password can not be same as existing password");
+    if (isSamePassword) {
+      throw new AppException(
+        "New password cannot be the same as current password",
+        httpStatus.BAD_REQUEST
+      );
+    }
 
-    const updatedUser = await prisma.user.update({
+    const hashedPassword = await this.encryptionService.hashPassword(newPassword);
+
+    return prisma.user.update({
       where: { id: user.id },
-      data: {
-        password: hashedPassword,
-      },
+      data: { password: hashedPassword },
     });
-
-    return updatedUser;
   }
 
   public async googleAuth(data: { token: string }) {
@@ -245,9 +228,8 @@ export class AuthUserService {
     const googlePayload = ticket.getPayload();
 
     if (!googlePayload) {
-      throw Error("Invalid Google token");
+      throw new AppException("Invalid Google token", httpStatus.UNAUTHORIZED);
     }
-    console.log(googlePayload);
 
     let _user = await prisma.user.findFirst({
       where: { email: googlePayload.email },
@@ -271,11 +253,7 @@ export class AuthUserService {
         `${_user.firstName} ${_user.lastName}`
       );
 
-      return {
-        isNewUser: true,
-        user: _user,
-        token: _token,
-      };
+      return { isNewUser: true, user: _user, token: _token };
     }
 
     const _token = await this.generateToken(
@@ -284,13 +262,12 @@ export class AuthUserService {
     );
 
     return {
-      isNewUser: _user.cityOfResidence ? false : true,
+      isNewUser: !_user.cityOfResidence,
       user: _user,
       token: _token,
     };
   }
 
-  // Reset password
   public async resetPassword(email: string) {
     const identifierData = sanitizeIdentifier(email);
     const user = await prisma.user.findFirst({
@@ -305,13 +282,15 @@ export class AuthUserService {
       },
     });
 
-
     if (!user) {
-      throw Error("Email not found or not registered");
+      throw new AppException("Email not found", httpStatus.NOT_FOUND);
     }
 
     if (user.status === Status.DELETED) {
-      throw Error("Your account has been deleted. Please contact support if you believe this is an error.");
+      throw new AppException(
+        "Your account has been deleted. Please contact support.",
+        httpStatus.FORBIDDEN
+      );
     }
 
     await this.otpService.createOtp(identifierData.value);
@@ -326,16 +305,13 @@ export class AuthUserService {
     });
 
     if (!user) {
-      throw Error("Email not found or not registered");
+      throw new AppException("Email not found", httpStatus.NOT_FOUND);
     }
 
-    const verifiedOtp = await this.otpService.verifyOtp(
-      identifierData.value,
-      otp
-    );
+    const verifiedOtp = await this.otpService.verifyOtp(identifierData.value, otp);
 
     if (!verifiedOtp) {
-      throw Error("Invalid OTP");
+      throw new AppException("Invalid OTP", httpStatus.BAD_REQUEST);
     }
 
     return verifiedOtp;
@@ -347,30 +323,32 @@ export class AuthUserService {
     token: string
   ) {
     const verifiedOtp = await this.otpService.getOtp(token);
+
+    if (!verifiedOtp) {
+      throw new AppException("Invalid or expired token", httpStatus.BAD_REQUEST);
+    }
+
     const identifierData = sanitizeIdentifier(verifiedOtp.identifier);
     const user = await prisma.user.findFirst({
       where: { [identifierData.type]: identifierData.value },
     });
 
     if (!user) {
-      throw Error("Email not found or not registered");
+      throw new AppException("User not found", httpStatus.NOT_FOUND);
     }
 
     if (password !== passwordConfirmation) {
-      throw Error("The new password and confirmation password do not match");
-    }
-
-    if (!verifiedOtp) {
-      throw Error("Invalid OTP");
+      throw new AppException(
+        "Password and confirmation do not match",
+        httpStatus.BAD_REQUEST
+      );
     }
 
     const hashedPassword = await this.encryptionService.hashPassword(password);
 
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
-      data: {
-        password: hashedPassword,
-      },
+      data: { password: hashedPassword },
     });
 
     await this.otpService.deleteOtp(token);

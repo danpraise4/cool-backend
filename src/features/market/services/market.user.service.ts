@@ -1,14 +1,9 @@
-import {
-  IMarketCreateProduct,
-  IMarketUpdateProduct,
-} from "../market.interface";
+import { IMarketCreateProduct, IMarketUpdateProduct } from "../market.interface";
 import { MaterialsService } from "../../materials/materials.services";
 import { AzureBlobService } from "../../../shared/services/azure/blobstorage.service";
-
 import { v4 } from "uuid";
-import prismaClient from "../../../infastructure/database/postgreSQL/connect";
+import prisma from "../../../infastructure/database/postgreSQL/connect";
 import {
-  Currency,
   Order,
   Product,
   ProductType,
@@ -18,6 +13,9 @@ import {
 } from "@prisma/client";
 import { WalletService } from "../../wallet/wallet.services";
 import { Helper } from "../../../shared/helper/helper";
+import AppException from "../../../infastructure/https/exception/app.exception";
+import httpStatus from "http-status";
+import { getCurrencyForCity } from "../../../shared/config/region";
 
 class MarketUserService {
   private readonly materialService: MaterialsService;
@@ -28,112 +26,74 @@ class MarketUserService {
     this.walletService = new WalletService();
   }
 
-  async createProduct(
-    _config: IMarketCreateProduct,
-    user: User
-  ): Promise<Product | null> {
-    // check if material exists
+  async createProduct(config: IMarketCreateProduct, user: User): Promise<Product> {
+    const uploads: string[] = [];
 
-    const _uploads: string[] = [];
-    const material = await _config.material.toString();
-
-    // upload images :
-    if (_config.media != null && _config.media.length > 0) {
-      // Upload each image and collect responses
-      for (const image of _config.media) {
-        const _file = v4();
-        const _upload = await AzureBlobService.instance.uploadBase64Image(
+    if (config.media?.length) {
+      for (const image of config.media) {
+        const upload = await AzureBlobService.instance.uploadBase64Image(
           image,
-          `${_file}-${_uploads.length}`,
+          `${v4()}-${uploads.length}`,
           "image/png"
         );
-        _uploads.push(_upload.url);
+        uploads.push(upload.url);
       }
     }
 
-    const currency: Currency = user.cityOfResidence === "Lagos" ? Currency.NGN : Currency.EUR;
-    const product = await prismaClient.product.create({
+    const currency = getCurrencyForCity(user.cityOfResidence);
+
+    return prisma.product.create({
       data: {
-        title: _config.title,
-        description: _config.description,
-        material: material,
-        images: _uploads,
+        title: config.title,
+        description: config.description,
+        material: config.material.toString(),
+        images: uploads,
         userId: user.id,
-        currency: currency,
-        type: _config.type || ProductType.SALES_PRODUCT,
-        ...(_config.price ? { price: _config.price } : {}),
+        currency,
+        type: config.type || ProductType.SALES_PRODUCT,
+        ...(config.price ? { price: config.price } : {}),
       },
     });
-
-    return product;
   }
 
-  // Get all available market products (excluding user's own products)
   async getAvailableProducts(userId: string, page = 1, limit = 10) {
     const skip = (page - 1) * limit;
+    const where = {
+      status: Status.PUBLISHED,
+      isSold: false,
+      NOT: { userId },
+    };
 
-    const products = await prismaClient.product.findMany({
-      where: {
-        status: Status.PUBLISHED,
-        isSold: false,
-        NOT: {
-          userId: userId,
-        },
-      },
-      include: {
-        createdBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-            phone: true,
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        include: {
+          createdBy: {
+            select: { id: true, firstName: true, lastName: true, image: true, phone: true },
           },
         },
-      },
-      skip,
-      take: limit,
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.product.count({ where }),
+    ]);
 
-    // Get all materials in parallel
-    const materialPromises = products.map((product) =>
-      this.materialService.getMaterialsById(product.material)
+    const materials = await Promise.all(
+      products.map((p) => this.materialService.getMaterialsById(p.material))
     );
-    const materials = await Promise.all(materialPromises);
-
-    // Map materials back to products
-    const productsWithMaterials = products.map((product, index) => ({
-      ...product,
-      material: materials[index].payload,
-    }));
-
-    const total = await prismaClient.product.count({
-      where: {
-        status: Status.PUBLISHED,
-        isSold: false,
-        NOT: {
-          userId: userId,
-        },
-      },
-    });
-
-    console.log("productsWithMaterials", productsWithMaterials);
 
     return {
-      products: productsWithMaterials,
+      products: products.map((p, i) => ({ ...p, material: materials[i].payload })),
       meta: {
         currentPage: page,
         pageSize: limit,
-        totalPosts: total,
+        total,
         totalPages: Math.ceil(total / limit),
       },
     };
   }
 
-  // Get user's products
   async getUserProducts(
     userId: string,
     page = 1,
@@ -142,326 +102,218 @@ class MarketUserService {
     status: "isSold" | "isNotSold"
   ) {
     const skip = (page - 1) * limit;
+    const where = {
+      userId,
+      type,
+      isSold: status === "isSold",
+    };
 
-    const products = await prismaClient.product.findMany({
-      where: {
-        userId: userId,
-        type: type,
-        isSold: status === "isSold" ? true : false,
-      },
-      include: {
-        soldTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            image: true,
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        include: {
+          soldTo: {
+            select: { id: true, firstName: true, lastName: true, image: true },
           },
         },
-      },
-      skip,
-      take: limit,
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.product.count({ where: { userId } }),
+    ]);
 
-    // Get all materials in parallel
-    const materialPromises = products.map((product) =>
-      this.materialService.getMaterialsById(product.material)
+    const materials = await Promise.all(
+      products.map((p) => this.materialService.getMaterialsById(p.material))
     );
-    const materials = await Promise.all(materialPromises);
-
-    // Map materials back to products
-    const productsWithMaterials = products.map((product, index) => ({
-      ...product,
-      material: materials[index].payload,
-    }));
-
-    const total = await prismaClient.product.count({
-      where: {
-        userId: userId,
-      },
-    });
 
     return {
-      products: productsWithMaterials,
+      products: products.map((p, i) => ({ ...p, material: materials[i].payload })),
       meta: {
         currentPage: page,
         pageSize: limit,
-        totalPosts: total,
+        total,
         totalPages: Math.ceil(total / limit),
       },
     };
   }
 
-  // Get purchased products
   async getPurchasedProducts(userId: string, page = 1, limit = 10) {
     const skip = (page - 1) * limit;
+    const where = { soldToId: userId, isSold: true };
 
-    const products = await prismaClient.product.findMany({
-      where: {
-        soldToId: userId,
-        isSold: true,
-      },
-      include: {
-        createdBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-            phone: true,
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        include: {
+          createdBy: {
+            select: { id: true, firstName: true, lastName: true, image: true, phone: true },
           },
         },
-      },
-      skip,
-      take: limit,
-      orderBy: {
-        soldAt: "desc",
-      },
-    });
+        skip,
+        take: limit,
+        orderBy: { soldAt: "desc" },
+      }),
+      prisma.product.count({ where }),
+    ]);
 
-    // Get all materials in parallel
-    const materialPromises = products.map((product) =>
-      this.materialService.getMaterialsById(product.material)
+    const materials = await Promise.all(
+      products.map((p) => this.materialService.getMaterialsById(p.material))
     );
-    const materials = await Promise.all(materialPromises);
-
-    // Map materials back to products
-    const productsWithMaterials = products.map((product, index) => ({
-      ...product,
-      material: materials[index].payload,
-    }));
-
-    const total = await prismaClient.product.count({
-      where: {
-        soldToId: userId,
-        isSold: true,
-      },
-    });
 
     return {
-      products: productsWithMaterials,
+      products: products.map((p, i) => ({ ...p, material: materials[i].payload })),
       meta: {
         currentPage: page,
         pageSize: limit,
-        totalPosts: total,
+        total,
         totalPages: Math.ceil(total / limit),
       },
     };
   }
 
-  // Get single product
   async getProductById(productId: string) {
-    const product = await prismaClient.product.findUnique({
-      where: {
-        id: productId,
-      },
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
       include: {
         createdBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-            phone: true,
-          },
+          select: { id: true, firstName: true, lastName: true, image: true, phone: true },
         },
         soldTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-          },
+          select: { id: true, firstName: true, lastName: true, image: true },
         },
       },
     });
 
     if (!product) {
-      throw new Error("Product not found");
+      throw new AppException("Product not found", httpStatus.NOT_FOUND);
     }
 
-    // Get material details
-    const material = await this.materialService.getMaterialsById(
-      product.material
-    );
-
-    return {
-      ...product,
-      material: material.payload,
-    };
+    const material = await this.materialService.getMaterialsById(product.material);
+    return { ...product, material: material.payload };
   }
 
-  // Get order by reference
   async getOrderById(orderId: string) {
-    const order = await prismaClient.order.findUnique({
-      where: {
-        id: orderId,
-      },
+    return prisma.order.findUnique({
+      where: { id: orderId },
       include: {
         user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-          },
+          select: { id: true, firstName: true, lastName: true, image: true },
         },
         product: {
           include: {
             createdBy: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                image: true,
-                phone: true,
-              },
+              select: { id: true, firstName: true, lastName: true, image: true, phone: true },
             },
           },
         },
       },
     });
-    return order;
   }
 
-  // Get Order by reference
   async getOrderByReference(reference: string): Promise<Order> {
-    const order = await prismaClient.order.findFirst({
-      where: {
-        reference: reference,
-      },
+    return prisma.order.findFirst({
+      where: { reference },
       include: {
         user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-          },
+          select: { id: true, firstName: true, lastName: true, image: true },
         },
         product: {
           include: {
             createdBy: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                image: true,
-                phone: true,
-              },
+              select: { id: true, firstName: true, lastName: true, image: true, phone: true },
             },
           },
         },
       },
     });
-
-    return order;
   }
 
-  // Update product
   async updateProduct(
     productId: string,
     userId: string,
-    _config: IMarketUpdateProduct
+    config: IMarketUpdateProduct
   ): Promise<Product> {
-    const product = await prismaClient.product.findFirst({
-      where: {
-        id: productId,
-        userId: userId,
-      },
+    const product = await prisma.product.findFirst({
+      where: { id: productId, userId },
     });
 
     if (!product) {
-      throw new Error("Product not found or unauthorized");
+      throw new AppException("Product not found or unauthorized", httpStatus.NOT_FOUND);
     }
 
     if (product.isSold) {
-      throw new Error("Cannot update sold product");
+      throw new AppException("Cannot update a sold product", httpStatus.BAD_REQUEST);
     }
 
-    const _uploads: string[] = [...product.images];
+    let images = [...product.images];
 
-    // Handle new images if any
-    if (_config.newImages && _config.newImages.length > 0) {
-      for (const image of _config.newImages) {
-        const _file = v4();
-        const _upload = await AzureBlobService.instance.uploadBase64Image(
-          image,
-          `${_file}-${_uploads.length}`,
-          "image/png"
-        );
-        _uploads.push(_upload.url);
-      }
+    if (config.newImages?.length) {
+      const newUrls = await Promise.all(
+        config.newImages.map(async (image) => {
+          const upload = await AzureBlobService.instance.uploadBase64Image(
+            image,
+            `${v4()}-${images.length}`,
+            "image/png"
+          );
+          return upload.url;
+        })
+      );
+      images = [...images, ...newUrls];
     }
 
-    // Remove images if specified
-    if (_config.removeImages && _config.removeImages.length > 0) {
-      for (const imageUrl of _config.removeImages) {
-        const index = _uploads.indexOf(imageUrl);
-        if (index > -1) {
-          _uploads.splice(index, 1);
-          // Optionally delete from storage
-          await AzureBlobService.instance.deleteImage(imageUrl);
+    if (config.removeImages?.length) {
+      for (const url of config.removeImages) {
+        const idx = images.indexOf(url);
+        if (idx > -1) {
+          images.splice(idx, 1);
+          await AzureBlobService.instance.deleteImage(url);
         }
       }
     }
 
-    return await prismaClient.product.update({
-      where: {
-        id: productId,
-      },
+    return prisma.product.update({
+      where: { id: productId },
       data: {
-        title: _config.title,
-        description: _config.body,
-        price: _config.price,
-        images: _uploads,
-        status: _config.status,
+        title: config.title,
+        description: config.body,
+        price: config.price,
+        images,
+        status: config.status,
       },
     });
   }
 
-  // Delete product
   async deleteProduct(productId: string, userId: string): Promise<void> {
-    const product = await prismaClient.product.findFirst({
-      where: {
-        id: productId,
-        userId: userId,
-      },
+    const product = await prisma.product.findFirst({
+      where: { id: productId, userId },
     });
 
     if (!product) {
-      throw new Error("Product not found or unauthorized");
-    }
-    //check if product has requests
-    const requests = await prismaClient.charityProductRequest.findMany({
-      where: {
-        productId: productId,
-      },
-    });
-    if (requests.length > 0) {
-      throw new Error("Cannot delete product with requests");
+      throw new AppException("Product not found or unauthorized", httpStatus.NOT_FOUND);
     }
 
     if (product.isSold) {
-      throw new Error("Cannot delete sold product");
+      throw new AppException("Cannot delete a sold product", httpStatus.BAD_REQUEST);
     }
 
-    await prismaClient.product.delete({
-      where: {
-        id: productId,
-      },
+    const requests = await prisma.charityProductRequest.count({
+      where: { productId },
     });
+
+    if (requests > 0) {
+      throw new AppException(
+        "Cannot delete a product with pending requests",
+        httpStatus.BAD_REQUEST
+      );
+    }
+
+    await prisma.product.delete({ where: { id: productId } });
   }
 
-  // Mark product as sold
   async markAsSold(productId: string, buyerId: string): Promise<Product> {
-    return await prismaClient.product.update({
-      where: {
-        id: productId,
-      },
+    return prisma.product.update({
+      where: { id: productId },
       data: {
         isSold: true,
         soldAt: new Date(),
@@ -471,91 +323,70 @@ class MarketUserService {
     });
   }
 
-  // Request charity product
   async requestCharityProduct(productId: string, userId: string) {
     const product = await this.getProductById(productId);
 
     if (product.type !== ProductType.CHARITY_PRODUCT) {
-      throw new Error("Product is not a charity product");
+      throw new AppException("Product is not a charity product", httpStatus.BAD_REQUEST);
     }
-
     if (product.isSold) {
-      throw new Error("Product is already sold");
+      throw new AppException("Product is already sold", httpStatus.BAD_REQUEST);
     }
-
     if (product.status !== Status.PUBLISHED) {
-      throw new Error("Product is not published");
+      throw new AppException("Product is not available", httpStatus.BAD_REQUEST);
+    }
+    if (product.userId === userId) {
+      throw new AppException(
+        "Cannot request your own product",
+        httpStatus.BAD_REQUEST
+      );
     }
 
-    if (product.userId === userId) {
-      throw new Error("Cannot request your own charity product");
-    }
-    // check if user has already requested this product
-    const existingRequest = await prismaClient.charityProductRequest.findFirst({
-      where: {
-        productId: productId,
-        userId: userId,
-      },
+    const existingRequest = await prisma.charityProductRequest.findFirst({
+      where: { productId, userId },
     });
 
     if (existingRequest) {
-      throw new Error("You have already requested this product");
+      throw new AppException("You have already requested this product", httpStatus.CONFLICT);
     }
 
-    const charityProductRequest =
-      await prismaClient.charityProductRequest.create({
-        data: {
-          productId: productId,
-          userId: userId,
-        },
-      });
-
-    return charityProductRequest;
+    return prisma.charityProductRequest.create({
+      data: { productId, userId },
+    });
   }
 
-  // add toggle Products to cart
   async toggleProductToCart(productId: string, userId: string) {
     const product = await this.getProductById(productId);
 
     if (product.type === ProductType.CHARITY_PRODUCT) {
-      throw new Error("Cannot add charity product to cart");
+      throw new AppException(
+        "Cannot add charity products to cart",
+        httpStatus.BAD_REQUEST
+      );
     }
-
     if (product.isSold) {
-      throw new Error("Product is already sold");
+      throw new AppException("Product is already sold", httpStatus.BAD_REQUEST);
     }
-
     if (product.status !== Status.PUBLISHED) {
-      throw new Error("Product is not published");
+      throw new AppException("Product is not available", httpStatus.BAD_REQUEST);
     }
 
-    const charityProduct = await prismaClient.chartProduct.findFirst({
-      where: {
-        productId: productId,
-        userId: userId,
-      },
+    const existing = await prisma.chartProduct.findFirst({
+      where: { productId, userId },
     });
 
-    if (charityProduct) {
-      await prismaClient.chartProduct.delete({
-        where: { id: charityProduct.id },
-      });
+    if (existing) {
+      await prisma.chartProduct.delete({ where: { id: existing.id } });
       return { message: "Product removed from cart" };
-    } else {
-      await prismaClient.chartProduct.create({
-        data: {
-          productId: productId,
-          userId: userId,
-        },
-      });
-      return { message: "Product added to cart" };
     }
+
+    await prisma.chartProduct.create({ data: { productId, userId } });
+    return { message: "Product added to cart" };
   }
 
-  // Get user's cart
   async getUserCart(userId: string) {
-    const cart = await prismaClient.chartProduct.findMany({
-      where: { userId: userId },
+    return prisma.chartProduct.findMany({
+      where: { userId },
       select: {
         product: {
           select: {
@@ -566,168 +397,120 @@ class MarketUserService {
             price: true,
             material: true,
             createdBy: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                image: true,
-                phone: true,
-              },
+              select: { id: true, firstName: true, lastName: true, image: true, phone: true },
             },
           },
         },
       },
     });
-    return cart;
   }
 
-  // Check if product is in cart
-  async checkIfProductInCart(productId: string, userId: string) {
-    const cart = await prismaClient.chartProduct.findFirst({
-      where: { productId: productId, userId: userId },
+  async checkIfProductInCart(productId: string, userId: string): Promise<boolean> {
+    const item = await prisma.chartProduct.findFirst({
+      where: { productId, userId },
     });
-    return cart ? true : false;
+    return !!item;
   }
 
-  // Get charity product requests
   async getProductRequests(requestId: string) {
-    const request = await prismaClient.charityProductRequest.findUnique({
-      where: {
-        id: requestId,
-      },
+    const request = await prisma.charityProductRequest.findUnique({
+      where: { id: requestId },
     });
 
     if (!request) {
-      throw new Error("Request not found");
+      throw new AppException("Request not found", httpStatus.NOT_FOUND);
     }
 
     return request;
   }
 
-  // Get charity products history that are sold or donated
   async getCharityProductsHistory(userId: string, page = 1, limit = 10) {
     const skip = (page - 1) * limit;
-    const total = await prismaClient.product.count({
-      where: {
-        type: ProductType.CHARITY_PRODUCT,
-        createdBy: {
-          id: userId,
-        },
-        isSold: true,
-        OR: [
-          {
-            status: Status.COMPLETED,
-          },
-        ],
-      },
-    });
+    const where = {
+      type: ProductType.CHARITY_PRODUCT,
+      createdBy: { id: userId },
+      isSold: true,
+      status: Status.COMPLETED,
+    };
 
-    const products = await prismaClient.product.findMany({
-      where: {
-        type: ProductType.CHARITY_PRODUCT,
-        isSold: true,
-        createdBy: {
-          id: userId,
-        },
-      },
-      skip,
-      take: limit,
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({ where, skip, take: limit, orderBy: { createdAt: "desc" } }),
+      prisma.product.count({ where }),
+    ]);
 
     return {
       products,
       meta: {
         currentPage: page,
         pageSize: limit,
-        totalPosts: total,
+        total,
         totalPages: Math.ceil(total / limit),
       },
     };
   }
 
-  // Get charity products for all users
   async getCharityProductsForAllUsers(page = 1, limit = 10) {
     const skip = (page - 1) * limit;
-    const total = await prismaClient.product.count({
-      where: {
-        type: ProductType.CHARITY_PRODUCT,
-        isSold: false,
-        status: Status.PUBLISHED,
-      },
-    });
+    const where = {
+      type: ProductType.CHARITY_PRODUCT,
+      isSold: false,
+      status: Status.PUBLISHED,
+    };
 
-    const products = await prismaClient.product.findMany({
-      where: {
-        type: ProductType.CHARITY_PRODUCT,
-        isSold: false,
-        status: Status.PUBLISHED,
-      },
-      skip,
-      take: limit,
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({ where, skip, take: limit, orderBy: { createdAt: "desc" } }),
+      prisma.product.count({ where }),
+    ]);
 
     return {
       products,
       meta: {
         currentPage: page,
         pageSize: limit,
-        totalPosts: total,
+        total,
         totalPages: Math.ceil(total / limit),
       },
     };
   }
 
-  // Approve charity product request
+  /**
+   * Approve or reject a charity product request.
+   * Authorization check happens BEFORE any write operations.
+   */
   async approveCharityProductRequest(
     requestId: string,
-    userId: string, // Id of the user who is approving the request
+    userId: string,
     status: "APPROVED" | "REJECTED"
   ) {
     const request = await this.getProductRequests(requestId);
-
-    if (request.status === Status.APPROVED) {
-      throw new Error("Request is already approved");
-    }
-
     const product = await this.getProductById(request.productId);
 
-    // Validate product eligibility
-    const validations = [
-      {
-        condition: product.isSold,
-        message: "Product is already sold",
-      },
-      {
-        condition: product.status !== Status.PUBLISHED,
-        message: "Product is not published",
-      },
-      {
-        condition: product.type !== ProductType.CHARITY_PRODUCT,
-        message: "Product is not a charity product",
-      },
-      {
-        condition: product.userId === request.userId,
-        message: "Cannot approve your own charity product",
-      },
-    ];
+    // Authorization: only the product owner can respond
+    if (product.userId !== userId) {
+      throw new AppException(
+        "You are not authorized to respond to this request",
+        httpStatus.FORBIDDEN
+      );
+    }
 
-    for (const validation of validations) {
-      if (validation.condition) {
-        throw new Error(validation.message);
-      }
+    if (request.status === Status.APPROVED) {
+      throw new AppException("Request is already approved", httpStatus.CONFLICT);
+    }
+    if (product.isSold) {
+      throw new AppException("Product is already sold", httpStatus.BAD_REQUEST);
+    }
+    if (product.status !== Status.PUBLISHED) {
+      throw new AppException("Product is not available", httpStatus.BAD_REQUEST);
+    }
+    if (product.type !== ProductType.CHARITY_PRODUCT) {
+      throw new AppException("Product is not a charity product", httpStatus.BAD_REQUEST);
     }
 
     if (status === "APPROVED") {
-      await prismaClient.product.update({
+      await prisma.product.update({
         where: { id: product.id },
         data: {
-          status: status === "APPROVED" ? Status.APPROVED : Status.REJECTED,
+          status: Status.APPROVED,
           isSold: true,
           soldAt: new Date(),
           soldToId: request.userId,
@@ -735,36 +518,18 @@ class MarketUserService {
       });
     }
 
-    console.log(product.userId);
-    console.log(userId);
-
-    if (product.userId !== userId) {
-      throw new Error("You are not authorized to respond to this request");
-    }
-
-    const updateRequest = await prismaClient.charityProductRequest.update({
+    return prisma.charityProductRequest.update({
       where: { id: requestId },
-      data: {
-        status: status,
-      },
+      data: { status },
     });
-
-    return updateRequest;
   }
 
-  // Get all charity product requests
   async getCharityProductRequests(userId: string) {
-    const products = await prismaClient.product.findMany({
+    const products = await prisma.product.findMany({
       where: {
         type: ProductType.CHARITY_PRODUCT,
-        createdBy: {
-          id: userId,
-        },
-        charityProductRequest: {
-          some: {
-            status: Status.PENDING,
-          }, // Has any requests
-        },
+        createdBy: { id: userId },
+        charityProductRequest: { some: { status: Status.PENDING } },
       },
       include: {
         charityProductRequest: {
@@ -775,13 +540,7 @@ class MarketUserService {
             userId: true,
             productId: true,
             createdBy: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                image: true,
-                phone: true,
-              },
+              select: { id: true, firstName: true, lastName: true, image: true, phone: true },
             },
           },
         },
@@ -804,29 +563,32 @@ class MarketUserService {
 
   createOrder = async (productId: string, userId: string, address: string) => {
     const product = await this.getProductById(productId);
+
+    if (!product) {
+      throw new AppException("Product not found", httpStatus.NOT_FOUND);
+    }
+    if (product.isSold) {
+      throw new AppException("Product is already sold", httpStatus.BAD_REQUEST);
+    }
+    if (product.status !== Status.PUBLISHED) {
+      throw new AppException("Product is not available", httpStatus.BAD_REQUEST);
+    }
+
     const wallet = await this.walletService.getWallet(userId);
 
     if (wallet.balance < product.price) {
-      throw new Error("Insufficient funds");
+      throw new AppException("Insufficient funds", httpStatus.BAD_REQUEST);
     }
 
-    if (!product) {
-      throw new Error("Product not found");
-    }
-    if (product.isSold) {
-      throw new Error("Product is already sold");
-    }
-
-    if (product.status !== Status.PUBLISHED) {
-      throw new Error("Product is not published");
-    }
-
-    // check if user has already ordered this product
-    const existingOrder = await prismaClient.order.findFirst({
-      where: { productId: productId, userId: userId },
+    const existingOrder = await prisma.order.findFirst({
+      where: { productId, userId },
     });
+
     if (existingOrder) {
-      throw new Error("You have already ordered this product");
+      throw new AppException(
+        "You have already placed an order for this product",
+        httpStatus.CONFLICT
+      );
     }
 
     await this.walletService.chargeWallet(
@@ -836,137 +598,95 @@ class MarketUserService {
       productId,
       TransactionType.WITHDRAWAL
     );
-    const reference = Helper.generateOrderReference();
-    const order = await prismaClient.order.create({
+
+    return prisma.order.create({
       data: {
-        reference: reference,
-        product: {
-          connect: {
-            id: productId,
-          },
-        },
-        user: {
-          connect: {
-            id: userId,
-          },
-        },
-        address: address,
+        reference: Helper.generateOrderReference(),
+        product: { connect: { id: productId } },
+        user: { connect: { id: userId } },
+        address,
         status: Status.PENDING,
       },
     });
-
-
-
-    return order;
   };
-  
+
   confirmOrder = async (orderId: string, userId: string) => {
-    // Validate inputs
     if (!orderId || !userId) {
-      throw new Error("Order ID and User ID are required");
+      throw new AppException("Order ID and user ID are required", httpStatus.BAD_REQUEST);
     }
 
     const order = await this.getOrderById(orderId);
 
-    // Validate order existence and permissions
-    this.validateOrderForConfirmation(order, userId);
+    if (!order) {
+      throw new AppException("Order not found", httpStatus.NOT_FOUND);
+    }
+    if (order.status !== Status.PENDING) {
+      throw new AppException("Order is not pending", httpStatus.BAD_REQUEST);
+    }
+    if (order.user.id !== userId) {
+      throw new AppException(
+        "You are not authorized to confirm this order",
+        httpStatus.FORBIDDEN
+      );
+    }
 
-    try {
-      // Use transaction to ensure data consistency
-      const result = await prismaClient.$transaction(async (tx) => {
-        // Credit the seller's wallet
-        await this.walletService.creditWallet(
-          order.product.createdBy.id,
-          order.product.price,
-          "Market Order",
-          order.id
-        );
+    // Credit seller and update order + product atomically.
+    // walletService.creditWallet is called OUTSIDE the transaction to avoid
+    // nesting Prisma interactive transactions (not supported).
+    await this.walletService.creditWallet(
+      order.product.createdBy.id,
+      order.product.price,
+      "Market Order",
+      order.id
+    );
 
-        // Update order status
-        const updatedOrder = await tx.order.update({
-          where: { id: orderId },
-          data: {
-            status: Status.COMPLETED,
-          },
-        });
-
-        // Mark product as sold
-        await tx.product.update({
-          where: { id: order.product.id },
-          data: {
-            isSold: true,
-            soldAt: new Date(),
-            soldToId: userId,
-          },
-        });
-
-        return updatedOrder;
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: { status: Status.COMPLETED },
       });
 
-      // Handle pending orders refund (outside transaction to avoid deadlocks)
-      await this.refundPendingOrders(order.product.id, order.product.price);
+      await tx.product.update({
+        where: { id: order.product.id },
+        data: { isSold: true, soldAt: new Date(), soldToId: userId },
+      });
 
-      return result;
-    } catch (error: any) {
-      throw new Error(`Failed to confirm order: ${error.message}`);
-    }
+      return updated;
+    });
+
+    // Refund competing pending orders outside the main transaction
+    await this.refundPendingOrders(order.product.id, order.product.price);
+
+    return updatedOrder;
   };
 
-  private validateOrderForConfirmation(order: any, userId: string): void {
-    if (!order) {
-      throw new Error("Order not found");
-    }
-
-    if (order.status !== Status.PENDING) {
-      throw new Error("Order is not pending");
-    }
-
-    if (order.user.id !== userId) {
-      throw new Error("You are not authorized to confirm this order");
-    }
-
-    // if (order.product.isSold) {
-    //   throw new Error("Product is already confirmed");
-    // }
-  }
-
-  private async refundPendingOrders(productId: string, productPrice: number): Promise<void> {
-    const pendingOrders = await prismaClient.order.findMany({
-      where: {
-        productId: productId,
-        status: Status.PENDING
-      },
+  private async refundPendingOrders(
+    productId: string,
+    productPrice: number
+  ): Promise<void> {
+    const pendingOrders = await prisma.order.findMany({
+      where: { productId, status: Status.PENDING },
     });
 
-    // Process refunds in parallel for better performance
-    const refundPromises = pendingOrders.map(async (pendingOrder) => {
-      try {
+    await Promise.allSettled(
+      pendingOrders.map(async (pending) => {
         await this.walletService.creditWallet(
-          pendingOrder.userId,
+          pending.userId,
           productPrice,
-          "(Refund) Order Rejected",
-          pendingOrder.id
+          "(Refund) Order rejected",
+          pending.id
         );
-
-        await prismaClient.order.update({
-          where: { id: pendingOrder.id },
-          data: {
-            status: Status.REJECTED,
-          },
+        await prisma.order.update({
+          where: { id: pending.id },
+          data: { status: Status.REJECTED },
         });
-      } catch (error) {
-        console.error(`Failed to refund order ${pendingOrder.id}:`, error);
-        // Consider implementing a retry mechanism or dead letter queue here
-      }
-    });
-
-    await Promise.allSettled(refundPromises);
+      })
+    );
   }
 
-  // Get user's orders
-  async getOrders(_userId: string) {
-    const orders = await prismaClient.order.findMany({
-      where: { user: { id: _userId } },
+  async getOrders(userId: string) {
+    return prisma.order.findMany({
+      where: { user: { id: userId } },
       include: {
         product: {
           select: {
@@ -979,26 +699,15 @@ class MarketUserService {
             updatedAt: true,
             material: true,
             createdBy: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                image: true,
-                phone: true,
-              },
+              select: { id: true, firstName: true, lastName: true, image: true, phone: true },
             },
             soldTo: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
+              select: { id: true, firstName: true, lastName: true },
             },
           },
         },
       },
     });
-    return orders;
   }
 }
 

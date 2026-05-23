@@ -1,4 +1,5 @@
-import { Currency, LocationAccuracy, ProductType, Status, User } from "@prisma/client";
+import { LocationAccuracy, ProductType, Status, User } from "@prisma/client";
+import { getCurrencyForCity } from "../../shared/config/region";
 import prismaClient from "../../infastructure/database/postgreSQL/connect";
 import { AzureBlobService } from "../../shared/services/azure/blobstorage.service";
 import { ISettings, IUser } from "./user.intercase";
@@ -53,9 +54,7 @@ export class UserService {
   }
 
   public async updateUser(user: IUser) {
-    console.log("1 user");
     const checkUser = await this.getUserById(user.id);
-    console.log("2 user");
     if (!checkUser) {
       throw new Error("User not found");
     }
@@ -193,13 +192,12 @@ export class UserService {
 
   public async getHomeCharities(_user: User, params: { Latitude: number; Longitude: number }): Promise<any[]> {
     try {
-      console.log("params", params);
       // Fetch charity products
       const charities = await prismaClient.product.findMany({
         where: {
           isSold: false,
           type: ProductType.CHARITY_PRODUCT,
-          currency: _user.cityOfResidence === "Lagos" ? Currency.NGN : Currency.EUR,
+          currency: getCurrencyForCity(_user.cityOfResidence),
           createdBy: {
             id: {
               not: _user.id,
@@ -317,7 +315,7 @@ export class UserService {
         where: {
           isSold: false,
           type: ProductType.SALES_PRODUCT,
-          currency: _user.cityOfResidence === "Lagos" ? Currency.NGN : Currency.EUR,
+          currency: getCurrencyForCity(_user.cityOfResidence),
           createdBy: {
             id: {
               not: _user.id,

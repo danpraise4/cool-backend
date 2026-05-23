@@ -120,7 +120,7 @@ export default class TokenService {
       const encrypted = cipher.output;
       return forge.util.encode64(encrypted.getBytes());
     } catch (error) {
-      console.log(error);
+      throw new Error(`Failed to encrypt payload: ${(error as Error).message}`);
     }
   }
 }

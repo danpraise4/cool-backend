@@ -9,161 +9,78 @@ export default class Flutterwave extends FlutterwaveUtil {
     super(build);
   }
 
-
-  async createCardCharge(
-    data: CreateCardChargeInput
-  ): Promise<IFlutterwaveBaseResponse<any>> {
-    try {
-      const response = await this.postRequest<
-        { [key: string]: any },
-        IFlutterwaveBaseResponse<String>
-      >(this.buildHeader(), data, `${endpoints.CREATE_CARD_CHARGE}`);
-
-      return response;
-    } catch (err: unknown) {
-      console.log(err);
-      if (err instanceof Error) {
-        throw new Error(err.message);
-      }
-      throw new Error(err as string);
-    }
+  async createCardCharge(data: CreateCardChargeInput): Promise<IFlutterwaveBaseResponse<any>> {
+    const response = await this.postRequest<{ [key: string]: any }, IFlutterwaveBaseResponse<string>>(
+      this.buildHeader(),
+      data,
+      endpoints.CREATE_CARD_CHARGE
+    );
+    return response;
   }
 
+  async chargeCard(data: { [key: string]: any }): Promise<IFlutterwaveBaseResponse<string>> {
+    const response = await this.postRequest<{ [key: string]: any }, IFlutterwaveBaseResponse<string>>(
+      this.buildHeader(),
+      data,
+      endpoints.CHARGE({ type: "card" })
+    );
 
-  async chargeCard(data: {
-    [key: string]: any;
-  }): Promise<IFlutterwaveBaseResponse<String>> {
-    try {
-      const response = await this.postRequest<
-        { [key: string]: any },
-        IFlutterwaveBaseResponse<String>
-      >(this.buildHeader(), data, `${endpoints.CHARGE({ type: "card" })}`);
-
-      console.log(response);
-
-      if (response.status === "success") {
-        return response;
-      } else {
-        throw new Error("Could not validate bvn");
-      }
-    } catch (err: unknown) {
-      console.log(err);
-      if (err instanceof Error) {
-        throw new Error(err.message);
-      }
-      throw new Error(err as string);
+    if (response.status !== "success") {
+      throw new Error(response.message || "Card charge failed");
     }
+    return response;
   }
 
-  // Get Bank Account Details
-  async getBankAccountDetails(data: {
-    [key: string]: any;
-  }): Promise<IFlutterwaveBaseResponse<any>> {
-    try {
-      const response = await this.postRequest<
-        { [key: string]: any },
-        IFlutterwaveBaseResponse<any>
-      >(this.buildHeader(), data, `${endpoints.BANK_ACCOUNT_DETAILS}`);
-
-      return response;
-    } catch (err: unknown) {
-      console.log(err);
-      throw new Error(err as string);
-    }
+  async getBankAccountDetails(data: { [key: string]: any }): Promise<IFlutterwaveBaseResponse<any>> {
+    return this.postRequest<{ [key: string]: any }, IFlutterwaveBaseResponse<any>>(
+      this.buildHeader(),
+      data,
+      endpoints.BANK_ACCOUNT_DETAILS
+    );
   }
 
-  async resolveUK(data: {
-    [key: string]: any;
-  }): Promise<IFlutterwaveBaseResponse<any>> {
-    try {
-      const response = await this.postRequest<
-        { [key: string]: any },
-        IFlutterwaveBaseResponse<any>
-      >(this.buildHeader(), data, `${endpoints.RESOLVE_UK}`, "https://api.flutterwave.com/"
-      );
-      console.log(response);
-      return response;
-    } catch (err: unknown) {
-      console.log(err);
-      throw new Error(err as string);
-    }
+  async resolveUK(data: { [key: string]: any }): Promise<IFlutterwaveBaseResponse<any>> {
+    return this.postRequest<{ [key: string]: any }, IFlutterwaveBaseResponse<any>>(
+      this.buildHeader(),
+      data,
+      endpoints.RESOLVE_UK,
+      "https://api.flutterwave.com/"
+    );
   }
 
-  // Transfer to Bank
-  async transferToBank(data: {
-    [key: string]: any;
-  }): Promise<IFlutterwaveBaseResponse<any>> {
-    try {
-      const response = await this.postRequest<
-        { [key: string]: any },
-        IFlutterwaveBaseResponse<any>
-      >(this.buildHeader(), data, `${endpoints.TRANSFER_TO_BANK}`);
-
-      return response;
-    } catch (err: unknown) {
-      console.log(err);
-      throw new Error(err as string);
-    }
+  async transferToBank(data: { [key: string]: any }): Promise<IFlutterwaveBaseResponse<any>> {
+    return this.postRequest<{ [key: string]: any }, IFlutterwaveBaseResponse<any>>(
+      this.buildHeader(),
+      data,
+      endpoints.TRANSFER_TO_BANK
+    );
   }
 
-
-  // Transfer to Bank
-  async transferToBankUKUser(data: {
-    [key: string]: any;
-  }): Promise<IFlutterwaveBaseResponse<any>> {
-    try {
-      const response = await this.postRequest<
-        { [key: string]: any },
-        IFlutterwaveBaseResponse<any>
-      >(this.buildHeader(), data, `${endpoints.TRANSFER_TO_BANK}`);
-
-      return response;
-    } catch (err: unknown) {
-      console.log(err);
-      throw new Error(err as string);
-    }
+  async transferToBankUKUser(data: { [key: string]: any }): Promise<IFlutterwaveBaseResponse<any>> {
+    return this.postRequest<{ [key: string]: any }, IFlutterwaveBaseResponse<any>>(
+      this.buildHeader(),
+      data,
+      endpoints.TRANSFER_TO_BANK
+    );
   }
 
-  // Get Banks List
   async getBanks(city: string): Promise<IFlutterwaveBaseResponse<any>> {
-    try {
-      const response = await this.getRequest<IFlutterwaveBaseResponse<any>>(
-        this.buildHeader(),
-        `${endpoints.BANKS(city)}`
-      );
-
-      return response;
-    } catch (err: unknown) {
-      console.log(err);
-      throw new Error(err as string);
-    }
+    return this.getRequest<IFlutterwaveBaseResponse<any>>(
+      this.buildHeader(),
+      endpoints.BANKS(city)
+    );
   }
 
-  // Charge Bank
-  async chargeBank(data: {
-    [key: string]: any;
-  }): Promise<IFlutterwaveBaseResponse<any>> {
-    try {
-      const response = await this.postRequest<
-        { [key: string]: any },
-        IFlutterwaveBaseResponse<any>
-      >(
-        this.buildHeader(),
-        data,
-        `${endpoints.CHARGE({ type: "bank_transfer" })}`
-      );
+  async chargeBank(data: { [key: string]: any }): Promise<IFlutterwaveBaseResponse<any>> {
+    const response = await this.postRequest<{ [key: string]: any }, IFlutterwaveBaseResponse<any>>(
+      this.buildHeader(),
+      data,
+      endpoints.CHARGE({ type: "bank_transfer" })
+    );
 
-      if (response.status === "success") {
-        return response;
-      } else {
-        throw new Error("Could not validate bvn");
-      }
-    } catch (err: unknown) {
-      console.log(err);
-      if (err instanceof Error) {
-        throw new Error(err.message);
-      }
-      throw new Error(err as string);
+    if (response.status !== "success") {
+      throw new Error(response.message || "Bank charge failed");
     }
+    return response;
   }
 }

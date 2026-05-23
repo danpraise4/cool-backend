@@ -1,10 +1,10 @@
 import httpStatus from "http-status";
-import AppException from "../../../infastructure/https/exception/app.exception";
 import { AuthUserService } from "../services/auth.user.services";
 import { NextFunction, Request, Response } from "express";
 import { RequestType } from "../../../shared/helper/helper";
 import LocationService from "../../../shared/services/location.service";
 import { UserService } from "../../user/user.services";
+import { sendSuccess } from "../../../shared/helper/response";
 
 export default class AuthUserController {
   constructor(
@@ -16,107 +16,67 @@ export default class AuthUserController {
   public login = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email, password } = req.body;
-
-      const result = await this.authService.login(email, password);
-
-      // generate token
-      if (result.status === 200) {
-        const token = await this.authService.generateToken(
-          result.user.id,
-          `${result.user.firstName} ${result.user.lastName}`
-        );
-
-        res.status(httpStatus.OK).json({
-          message: "Login successful",
-          data: {
-            user: result.user,
-            token,
-          },
-        });
-      } else {
-        return res.status(result.status).json(result);
-      }
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
+      const { user } = await this.authService.login(email, password);
+      const token = await this.authService.generateToken(
+        user.id,
+        `${user.firstName} ${user.lastName}`
       );
+      delete (user as { password?: string }).password;
+      sendSuccess(res, httpStatus.OK, {
+        message: "Login successful",
+        data: { user, token },
+      });
+    } catch (error) {
+      next(error);
     }
   };
 
   public register = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const data = await this.authService.register(req.body);
-
-      res.status(httpStatus.OK).json({
-        message: `Register successful. For testing purposes, your OTP is ${data.token}`,
-        data,
+      delete (data.user as { password?: string }).password;
+      sendSuccess(res, httpStatus.CREATED, {
+        message: "Registration successful",
+        data: { user: data.user, token: data.token },
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
-  public verifyOtp = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
+  public verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { identifier, otp } = req.body;
       const data = await this.authService.verifyOtp(identifier, otp);
-
-      res.status(httpStatus.OK).json({
+      sendSuccess(res, httpStatus.OK, {
         message: "OTP verified successfully",
         data,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
-  public checkUser = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
+  public checkUser = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { identifier } = req.body;
-      const data = await this.authService.checkUser(identifier);
-      res.status(httpStatus.OK).json({
-        message: `User checked successfully. For testing purposes, your OTP is ${data}`,
-        status: "success",
-        data: {
-          email_available: true,
-        },
+      await this.authService.checkUser(identifier);
+      sendSuccess(res, httpStatus.OK, {
+        message: "Email is available",
+        data: { email_available: true },
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
-  public resendOtp = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
+  public resendOtp = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { identifier } = req.body;
-      const data = await this.authService.resendOtp(identifier);
-
-      res.status(httpStatus.OK).json({
-        message: "OTP resent successfully",
-        data,
-      });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+      await this.authService.resendOtp(identifier);
+      sendSuccess(res, httpStatus.OK, { message: "OTP resent successfully" });
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -127,43 +87,28 @@ export default class AuthUserController {
   ) => {
     try {
       const { oldPassword, password, passwordConfirmation } = req.body;
-      const user = req.user;
-      const updatedUser = await this.authService.updatePassword(
-        user,
+      await this.authService.updatePassword(
+        req.user,
         password,
         passwordConfirmation,
         oldPassword
       );
-
-      res.status(httpStatus.OK).json({
-        status: "success",
-        message: "Password updated successfully",
-        data: updatedUser,
-      });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+      sendSuccess(res, httpStatus.OK, { message: "Password updated successfully" });
+    } catch (error) {
+      next(error);
     }
   };
 
-  // Google Auth
-  public googleAuth = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
+  public googleAuth = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const data = await this.authService.googleAuth(req.body);
-      res.status(httpStatus.OK).json({
-        message: "Google auth successful",
-        status: "success",
+      delete (data.user as { password?: string }).password;
+      sendSuccess(res, httpStatus.OK, {
+        message: "Google authentication successful",
         data,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
@@ -178,39 +123,28 @@ export default class AuthUserController {
         lat: Number(lat),
         long: Number(long),
       });
-      res.status(httpStatus.OK).json({
+      sendSuccess(res, httpStatus.OK, {
         message: "Location fetched successfully",
         data: location,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
-  // Reset password
-  public resetPassword = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
+  public resetPassword = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email } = req.body;
-      const data = await this.authService.resetPassword(email);
-      res.status(httpStatus.OK).json({
-        message: "Password reset successful",
-        status: "success",
-        data,
+      await this.authService.resetPassword(email);
+      sendSuccess(res, httpStatus.OK, {
+        message: "Password reset OTP sent to your email",
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
-  verifyResetPassword = async (
+  public verifyResetPassword = async (
     req: Request,
     res: Response,
     next: NextFunction
@@ -218,40 +152,39 @@ export default class AuthUserController {
     try {
       const { email, otp } = req.body;
       const data = await this.authService.verifyResetPassword(email, otp);
-      res.status(httpStatus.OK).json({
-        message: "Password reset successful",
-        status: "success",
+      sendSuccess(res, httpStatus.OK, {
+        message: "OTP verified successfully",
         data,
       });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+    } catch (error) {
+      next(error);
     }
   };
 
   public resetPasswordUpdate = async (
-    req: RequestType,
+    req: Request,
     res: Response,
     next: NextFunction
   ) => {
     try {
       const { password, passwordConfirmation, token } = req.body;
-      const updatedUser = await this.authService.resetPasswordUpdate(
+      await this.authService.resetPasswordUpdate(
         password,
         passwordConfirmation,
         token
       );
+      sendSuccess(res, httpStatus.OK, { message: "Password updated successfully" });
+    } catch (error) {
+      next(error);
+    }
+  };
 
-      res.status(httpStatus.OK).json({
-        status: "success",
-        message: "Password updated successfully",
-        data: updatedUser,
-      });
-    } catch (error: any) {
-      return next(
-        new AppException(error.message, error.status || httpStatus.BAD_REQUEST)
-      );
+  public logout = async (req: RequestType, res: Response, next: NextFunction) => {
+    try {
+      await this.authService.logout(req.user.id);
+      sendSuccess(res, httpStatus.OK, { message: "Logged out successfully" });
+    } catch (error) {
+      next(error);
     }
   };
 }

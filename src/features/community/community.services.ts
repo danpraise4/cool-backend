@@ -10,28 +10,21 @@ import { BlobResponse } from "../../shared/services/azure/blobstorage.model";
 export class CommunityService {
   constructor() { }
 
-  public async createCommunnityPost(cofig: {
+  public async createCommunnityPost(config: {
     user: User;
     post: ICommunityCreatePost;
   }) {
-    const _file = v4();
     let _uploads: BlobResponse[] = [];
 
-    console.log("here");
-
-    if (!cofig.post.content && cofig.post.images.length == 0) {
-      throw new Error("You have to specify a content or an image");
+    if (!config.post.content && config.post.images.length === 0) {
+      throw new Error("You must provide content or at least one image");
     }
 
-    console.log(cofig.post);
-
-    if (cofig.post.images) {
-      const imagesList = cofig.post.images;
-
-      for (const image of imagesList) {
+    if (config.post.images?.length) {
+      for (const image of config.post.images) {
         const upload = await AzureBlobService.instance.uploadBase64Image(
           image,
-          `${_file}-${v4()}`,
+          `${v4()}-${v4()}`,
           "image/png"
         );
         _uploads.push(upload);
@@ -40,8 +33,8 @@ export class CommunityService {
 
     const post = await prismaClient.post.create({
       data: {
-        body: cofig.post.content,
-        userId: cofig.user.id,
+        body: config.post.content,
+        userId: config.user.id,
         images: _uploads.map((upload) => upload.url),
       },
     });

@@ -40,10 +40,10 @@ router.route("/resolve-uk").post(isUserAuthenticated, walletController.resolveUK
 // Top up Bank
 router.route("/topup-bank").post(isUserAuthenticated, walletController.topupBank);
 
-// Credit User Wallet
+// Credit User Wallet — requires authentication
 router
   .route("/credit-user")
-  .post( validate(creditUserWalletValidator), walletController.creditUserWallet);
+  .post(isUserAuthenticated, validate(creditUserWalletValidator), walletController.creditUserWallet);
 
 
 

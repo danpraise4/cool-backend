@@ -17,7 +17,7 @@ export class ResendService {
       html: TemplateConfig[template].body.replace("{{otp}}", data.otp),
     });
 
-    console.log(response);
+    return response;
   }
 }
 

@@ -3,6 +3,7 @@ import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
 import * as path from "path";
 import { AzureBlobStorageConfig, BlobResponse } from "./blobstorage.model";
+import logger from "../logger";
 
 export class AzureBlobService {
   private config: AzureBlobStorageConfig;
@@ -47,13 +48,13 @@ export class AzureBlobService {
         this.config.cloudName && this.config.apiKey && this.config.apiSecret
       );
       if (this.available) {
-        console.log("Cloudinary initialized successfully");
+        logger.info("Cloudinary initialized");
       } else {
-        console.warn("Cloudinary unavailable: missing configuration");
+        logger.warn("Cloudinary unavailable: missing configuration");
       }
     } catch (error: any) {
       this.available = false;
-      console.error(`Cloudinary initialization failed: ${error.message}`);
+      logger.error({ err: error }, "Cloudinary initialization failed");
     }
   }
 
@@ -335,29 +336,6 @@ export class AzureBlobService {
     );
   }
 
-  public async debugListBlobs(prefix?: string): Promise<void> {
-    try {
-      const items = await this.listFiles(prefix);
-      console.log(`Found ${items.length} Cloudinary assets`);
-    } catch (error: any) {
-      console.error(`Error in debugListBlobs: ${error.message}`);
-    }
-  }
-
-  public async debugCheckBlob(blobName: string): Promise<{
-    exists: boolean;
-    properties?: any;
-    url?: string;
-    error?: string;
-  }> {
-    try {
-      const resource = await this.getBlobProperties(blobName);
-      if (!resource) return { exists: false };
-      return { exists: true, properties: resource, url: resource.secure_url };
-    } catch (error: any) {
-      return { exists: false, error: error.message };
-    }
-  }
 }
 
 export const createBlobService = (

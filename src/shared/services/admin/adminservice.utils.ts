@@ -33,7 +33,6 @@ export default class AdminServiceUtil {
     };
   }
   async postRequest<T, K>(headers: ObjT, jsonData: T, url: string): Promise<K> {
-    console.log(`${baseUrl}${url}`);
     const data = await fetch(`${baseUrl}${url}`, {
       method: "POST",
       headers,

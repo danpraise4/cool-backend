@@ -13,6 +13,5 @@ import './workers/reminders.worker';
     jobId: 'check-reminders-cron' // Unique ID to prevent duplicates
   });
 
-  console.log('Sync jobs scheduled 🚀');
-  console.log('Reminder jobs scheduled 🔔');
+  // sync and reminder jobs scheduled
 })();
