@@ -14,6 +14,7 @@ import AppException from "./infastructure/https/exception/app.exception";
 import logger from "./shared/services/logger";
 
 const app: Application = express();
+// update
 
 const corsOrigin =
   config.CORS_ORIGIN === "*"
