@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const ioredis_1 = __importDefault(require("ioredis"));
 const app_config_1 = __importDefault(require("../config/app.config"));
+const logger_1 = __importDefault(require("./logger"));
 class RedisService {
     static instance;
     client;
@@ -27,16 +28,13 @@ class RedisService {
         return this.client;
     }
     async checkConnection() {
-        console.log("Checking Redis connection");
-        let isConnected = false;
         try {
             await this.client.ping();
-            isConnected = true;
+            logger_1.default.info("Redis connection OK");
         }
         catch (error) {
-            isConnected = false;
+            logger_1.default.error({ err: error }, "Redis connection failed");
         }
-        console.log("Redis connection status", isConnected);
     }
     async set(key, value, ttl) {
         if (ttl) {

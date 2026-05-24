@@ -32,7 +32,6 @@ class AdminServiceUtil {
         };
     }
     async postRequest(headers, jsonData, url) {
-        console.log(`${adminservice_endpoints_1.baseUrl}${url}`);
         const data = await (0, node_fetch_1.default)(`${adminservice_endpoints_1.baseUrl}${url}`, {
             method: "POST",
             headers,

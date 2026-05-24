@@ -10,6 +10,10 @@ import config from "../../../shared/config/app.config";
 import { sanitizeIdentifier } from "../auth.utils";
 import AppException from "../../../infastructure/https/exception/app.exception";
 import httpStatus from "http-status";
+import {
+  emailNotificationService,
+  EmailNotificationType,
+} from "../../../shared/services/email/email-notification.service";
 
 export const { GOOGLE } = config;
 
@@ -86,6 +90,13 @@ export class AuthUserService {
         latitude,
         longitude,
         locationAccuracy: LocationAccuracy.EXACT,
+        settings: {
+          create: {
+            isEmailNotificationsEnabled: true,
+            isSmsNotificationsEnabled: true,
+            isPushNotificationsEnabled: true,
+          },
+        },
       },
     });
 
@@ -95,6 +106,10 @@ export class AuthUserService {
       newUser.id,
       `${newUser.firstName} ${newUser.lastName}`
     );
+
+    emailNotificationService.notifyUser(newUser.id, EmailNotificationType.REGISTRATION, {
+      firstName: newUser.firstName,
+    });
 
     return { user: newUser, token };
   }
@@ -160,6 +175,10 @@ export class AuthUserService {
       throw new AppException("Invalid email or password", httpStatus.UNAUTHORIZED);
     }
 
+    emailNotificationService.notifyUser(user.id, EmailNotificationType.LOGIN, {
+      firstName: user.firstName,
+    });
+
     return { user };
   }
 
@@ -213,10 +232,16 @@ export class AuthUserService {
 
     const hashedPassword = await this.encryptionService.hashPassword(newPassword);
 
-    return prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: user.id },
       data: { password: hashedPassword },
     });
+
+    emailNotificationService.notifyUser(user.id, EmailNotificationType.PASSWORD_CHANGED, {
+      firstName: updated.firstName,
+    });
+
+    return updated;
   }
 
   public async googleAuth(data: { token: string }) {
@@ -245,6 +270,13 @@ export class AuthUserService {
           image: googlePayload.picture,
           isEmailVerified: true,
           authType: AuthType.GOOGLE,
+          settings: {
+            create: {
+              isEmailNotificationsEnabled: true,
+              isSmsNotificationsEnabled: true,
+              isPushNotificationsEnabled: true,
+            },
+          },
         },
       });
 
@@ -253,6 +285,10 @@ export class AuthUserService {
         `${_user.firstName} ${_user.lastName}`
       );
 
+      emailNotificationService.notifyUser(_user.id, EmailNotificationType.REGISTRATION, {
+        firstName: _user.firstName,
+      });
+
       return { isNewUser: true, user: _user, token: _token };
     }
 
@@ -260,6 +296,10 @@ export class AuthUserService {
       _user.id,
       `${_user.firstName} ${_user.lastName}`
     );
+
+    emailNotificationService.notifyUser(_user.id, EmailNotificationType.LOGIN, {
+      firstName: _user.firstName,
+    });
 
     return {
       isNewUser: !_user.cityOfResidence,

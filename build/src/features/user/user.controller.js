@@ -5,8 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserController = void 0;
 const http_status_1 = __importDefault(require("http-status"));
-const app_exception_1 = __importDefault(require("../../infastructure/https/exception/app.exception"));
-const http_status_2 = __importDefault(require("http-status"));
+const response_1 = require("../../shared/helper/response");
 const pick_1 = __importDefault(require("../../shared/helper/pick"));
 class UserController {
     userService;
@@ -15,201 +14,162 @@ class UserController {
     }
     getUser = async (req, res, next) => {
         try {
-            const user = await this.userService.getUserById(req.user.id);
-            const settings = await this.userService.getUserSettings(req.user.id);
-            res.status(http_status_1.default.OK).json({
+            const [user, settings] = await Promise.all([
+                this.userService.getUserById(req.user.id),
+                this.userService.getUserSettings(req.user.id),
+            ]);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "User fetched successfully",
                 data: { user, settings },
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     updateDeviceToken = async (req, res, next) => {
         try {
-            const deviceToken = req.body.deviceToken;
-            const userId = req.user.id;
-            const updatedUser = await this.userService.updateDeviceToken(deviceToken, userId);
-            res.status(http_status_1.default.OK).json({
+            const updated = await this.userService.updateDeviceToken(req.body.deviceToken, req.user.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Device token updated successfully",
-                data: updatedUser,
+                data: updated,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     uploadImage = async (req, res, next) => {
         try {
-            const image = req.body.image;
-            const userId = req.user.id;
-            const updatedUser = await this.userService.uploadImage(image, userId);
-            res.status(http_status_1.default.OK).json({
+            const updated = await this.userService.uploadImage(req.body.image, req.user.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Image uploaded successfully",
-                data: updatedUser,
+                data: updated,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     deleteUser = async (req, res, next) => {
         try {
-            const userId = req.user.id;
-            const deletedUser = await this.userService.deleteUser(userId);
-            res.status(http_status_1.default.OK).json({
-                message: "User deleted successfully",
-                data: deletedUser,
-            });
+            const result = await this.userService.deleteUser(req.user.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Account deleted successfully", data: result });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     updateLocation = async (req, res, next) => {
         try {
-            const location = req.body.location;
-            const userId = req.user.id;
-            const updatedUser = await this.userService.updateLocation(location, userId);
-            res.status(http_status_1.default.OK).json({
+            const updated = await this.userService.updateLocation(req.body.location, req.user.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Location updated successfully",
-                data: updatedUser,
+                data: updated,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     updateSettings = async (req, res, next) => {
         try {
-            const user = req.user;
-            const data = await this.userService.updateSettings(user, req.body);
-            res.status(http_status_2.default.OK).json({
-                status: "success",
-                message: "Settings updated successfully",
-                data,
-            });
+            const data = await this.userService.updateSettings(req.user, req.body);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Settings updated successfully", data });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     updateUser = async (req, res, next) => {
         try {
-            const updatedUser = await this.userService.updateUser({
-                ...req.body,
-                id: req.user.id,
-            });
-            res.status(http_status_1.default.OK).json({
+            const updated = await this.userService.updateUser({ ...req.body, id: req.user.id });
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "User updated successfully",
-                data: { user: updatedUser },
+                data: { user: updated },
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     getHomeCharities = async (req, res, next) => {
         try {
-            const homePage = await this.userService.getHomeCharities(req.user, {
+            const data = await this.userService.getHomeCharities(req.user, {
                 Latitude: Number(req.query.Latitude),
                 Longitude: Number(req.query.Longitude),
             });
-            res.status(http_status_1.default.OK).json({
-                status: "success",
-                message: "Home page fetched successfully",
-                data: homePage,
-            });
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Charities fetched successfully", data });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     getHomeHeroes = async (req, res, next) => {
         try {
-            const homePage = await this.userService.getHomeHeroes(req.user);
-            res.status(http_status_1.default.OK).json({
-                status: "success",
-                message: "Home page fetched successfully",
-                data: homePage,
-            });
+            const data = await this.userService.getHomeHeroes(req.user);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Heroes fetched successfully", data });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     getHomeTopDeals = async (req, res, next) => {
         try {
-            const homePage = await this.userService.getHomeTopDeals(req.user, {
+            const data = await this.userService.getHomeTopDeals(req.user, {
                 Latitude: Number(req.query.Latitude),
                 Longitude: Number(req.query.Longitude),
             });
-            console.log("homePage", homePage);
-            res.status(http_status_1.default.OK).json({
-                status: "success",
-                message: "Home page fetched successfully",
-                data: homePage,
-            });
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Top deals fetched successfully", data });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     getHomeFacilities = async (req, res, next) => {
         try {
             const params = (0, pick_1.default)(req.query, ["Latitude", "Longitude"]);
-            const homePage = await this.userService.getHomeFacilities(req.user, params);
-            res.status(http_status_1.default.OK).json({
-                status: "success",
-                message: "Home page fetched successfully",
-                data: homePage,
-            });
+            const data = await this.userService.getHomeFacilities(req.user, params);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Facilities fetched successfully", data });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // Notifications
     getNotifications = async (req, res, next) => {
         try {
             const notifications = await this.userService.getNotifications(req.user);
-            res.status(http_status_1.default.OK).json({
-                status: "success",
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Notifications fetched successfully",
                 data: notifications,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     markNotificationAsRead = async (req, res, next) => {
         try {
-            const notificationId = req.params.id;
-            const notifications = await this.userService.markNotificationAsRead(req.user, notificationId);
-            res.status(http_status_1.default.OK).json({
-                status: "success",
-                message: "Notifications marked as read successfully",
-                data: notifications,
+            const notification = await this.userService.markNotificationAsRead(req.user, req.params.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Notification marked as read",
+                data: notification,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     markNotificationAsUnread = async (req, res, next) => {
         try {
-            const notificationId = req.params.id;
-            const notifications = await this.userService.markNotificationAsUnread(req.user, notificationId);
-            res.status(http_status_1.default.OK).json({
-                status: "success",
-                message: "Notifications marked as unread successfully",
-                data: notifications,
+            const notification = await this.userService.markNotificationAsUnread(req.user, req.params.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Notification marked as unread",
+                data: notification,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
 }

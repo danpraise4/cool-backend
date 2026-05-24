@@ -47,7 +47,7 @@ const envSchema = Yup.object()
     PORT: Yup.string().default("8000").required(),
     ENVIRONMENT: Yup.string().default("staging"),
     DATABASE_URL: Yup.string().label(" Database URL"),
-    APP_NAME: Yup.string().required().label("App Name").default("Aswitch"),
+    APP_NAME: Yup.string().required().label("App Name").default("Recycool"),
     JWT_ACCESS_TOKEN_EXPIRES: Yup.string()
         .default("1h")
         .label("JWT Access Token Expires")
@@ -92,6 +92,10 @@ const envSchema = Yup.object()
         .required()
         .label("Flutterwave Encryption Key"),
     RESEND_API_KEY: Yup.string().required().label("Resend API Key"),
+    /** Comma-separated origins for browser clients; use * for native apps only. */
+    CORS_ORIGIN: Yup.string().optional().default("*"),
+    /** Max failed requests per IP per window (production rate limit under /api). */
+    API_RATE_LIMIT_MAX: Yup.string().optional().default("400"),
 })
     .unknown();
 let envVars;
@@ -162,5 +166,7 @@ const config = {
     RESEND: {
         API_KEY: envVars.RESEND_API_KEY,
     },
+    CORS_ORIGIN: envVars.CORS_ORIGIN || "*",
+    API_RATE_LIMIT_MAX: Math.max(20, parseInt(String(envVars.API_RATE_LIMIT_MAX || "400"), 10) || 400),
 };
 exports.default = config;

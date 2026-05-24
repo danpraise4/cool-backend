@@ -6,39 +6,37 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ErrorHandler = exports.ErrorConverter = void 0;
 const http_status_1 = __importDefault(require("http-status"));
 const app_exception_1 = __importDefault(require("./app.exception"));
-function setDevError(err, res) {
-    return res.status(err.statusCode).send({
-        status: err.status,
-        message: err.message,
-        error: err,
-        error_stack: err.stack,
-    });
-}
-function setProductionError(err, res) {
-    return res.status(err.statusCode).send({
-        status: err.status,
-        message: err.message,
-    });
-}
+const logger_1 = __importDefault(require("../../../shared/services/logger"));
 const ErrorConverter = (err, _req, _res, next) => {
-    let error = err;
-    if (!(error instanceof app_exception_1.default)) {
-        const statusCode = error.statusCode || http_status_1.default.BAD_REQUEST;
-        const message = error.message || statusCode;
-        error = new app_exception_1.default(message, statusCode);
+    if (err instanceof app_exception_1.default) {
+        return next(err);
     }
-    next(error);
+    const anyErr = err;
+    const statusCode = anyErr.statusCode || http_status_1.default.INTERNAL_SERVER_ERROR;
+    const message = anyErr.message || "An unexpected error occurred";
+    const converted = new app_exception_1.default(message, statusCode);
+    converted.stack = anyErr.stack;
+    next(converted);
 };
 exports.ErrorConverter = ErrorConverter;
-const ErrorHandler = (err, _req, res, next) => {
-    err.statusCode = err.statusCode || http_status_1.default.BAD_REQUEST;
-    err.status = err.status || 'error';
-    if (process.env.NODE_ENV === 'development') {
-        setDevError(err, res);
+const ErrorHandler = (err, req, res, 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+_next) => {
+    const statusCode = err.statusCode || http_status_1.default.INTERNAL_SERVER_ERROR;
+    const message = err.message || "An unexpected error occurred";
+    if (statusCode >= 500) {
+        logger_1.default.error({ err, req: { method: req.method, url: req.originalUrl } }, message);
     }
-    else if (process.env.NODE_ENV === 'production') {
-        setProductionError(err, res);
+    else {
+        logger_1.default.warn({ statusCode, url: req.originalUrl }, message);
     }
-    next();
+    const body = {
+        success: false,
+        message,
+    };
+    if (process.env.NODE_ENV === "development") {
+        body.stack = err.stack;
+    }
+    res.status(statusCode).json(body);
 };
 exports.ErrorHandler = ErrorHandler;

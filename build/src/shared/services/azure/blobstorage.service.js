@@ -32,11 +32,15 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createBlobService = exports.AzureBlobService = void 0;
 const cloudinary_1 = require("cloudinary");
 const uuid_1 = require("uuid");
 const path = __importStar(require("path"));
+const logger_1 = __importDefault(require("../logger"));
 class AzureBlobService {
     config;
     available = false;
@@ -69,15 +73,15 @@ class AzureBlobService {
             });
             this.available = Boolean(this.config.cloudName && this.config.apiKey && this.config.apiSecret);
             if (this.available) {
-                console.log("Cloudinary initialized successfully");
+                logger_1.default.info("Cloudinary initialized");
             }
             else {
-                console.warn("Cloudinary unavailable: missing configuration");
+                logger_1.default.warn("Cloudinary unavailable: missing configuration");
             }
         }
         catch (error) {
             this.available = false;
-            console.error(`Cloudinary initialization failed: ${error.message}`);
+            logger_1.default.error({ err: error }, "Cloudinary initialization failed");
         }
     }
     blobUnavailableResponse() {
@@ -300,26 +304,6 @@ class AzureBlobService {
             return { success: false, error: processed.error };
         }
         return this.replaceFile(blobName, processed.buffer, processed.contentType, processed.buffer.length);
-    }
-    async debugListBlobs(prefix) {
-        try {
-            const items = await this.listFiles(prefix);
-            console.log(`Found ${items.length} Cloudinary assets`);
-        }
-        catch (error) {
-            console.error(`Error in debugListBlobs: ${error.message}`);
-        }
-    }
-    async debugCheckBlob(blobName) {
-        try {
-            const resource = await this.getBlobProperties(blobName);
-            if (!resource)
-                return { exists: false };
-            return { exists: true, properties: resource, url: resource.secure_url };
-        }
-        catch (error) {
-            return { exists: false, error: error.message };
-        }
     }
 }
 exports.AzureBlobService = AzureBlobService;

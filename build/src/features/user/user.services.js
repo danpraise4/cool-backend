@@ -5,11 +5,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserService = void 0;
 const client_1 = require("@prisma/client");
+const region_1 = require("../../shared/config/region");
 const connect_1 = __importDefault(require("../../infastructure/database/postgreSQL/connect"));
 const blobstorage_service_1 = require("../../shared/services/azure/blobstorage.service");
 const adminservice_client_1 = __importDefault(require("../../shared/services/admin/adminservice.client"));
 const adminservice_1 = __importDefault(require("../../shared/services/admin/adminservice"));
 const helper_1 = require("../../shared/helper/helper");
+const email_notification_service_1 = require("../../shared/services/email/email-notification.service");
 class UserService {
     AdminClient;
     constructor() {
@@ -42,9 +44,7 @@ class UserService {
         return updatedUser;
     }
     async updateUser(user) {
-        console.log("1 user");
         const checkUser = await this.getUserById(user.id);
-        console.log("2 user");
         if (!checkUser) {
             throw new Error("User not found");
         }
@@ -96,6 +96,9 @@ class UserService {
         if (futureSchedules.length > 0) {
             throw new Error("You have upcoming recycle schedules. Please complete or cancel them before deleting your account.");
         }
+        email_notification_service_1.emailNotificationService.notifyUser(userId, email_notification_service_1.EmailNotificationType.ACCOUNT_DELETED, {
+            firstName: user.firstName,
+        });
         await connect_1.default.user.update({
             where: { id: userId },
             data: { status: client_1.Status.DELETED },
@@ -151,13 +154,12 @@ class UserService {
     }
     async getHomeCharities(_user, params) {
         try {
-            console.log("params", params);
             // Fetch charity products
             const charities = await connect_1.default.product.findMany({
                 where: {
                     isSold: false,
                     type: client_1.ProductType.CHARITY_PRODUCT,
-                    currency: _user.cityOfResidence === "Lagos" ? client_1.Currency.NGN : client_1.Currency.EUR,
+                    currency: (0, region_1.getCurrencyForCity)(_user.cityOfResidence),
                     createdBy: {
                         id: {
                             not: _user.id,
@@ -258,7 +260,7 @@ class UserService {
                 where: {
                     isSold: false,
                     type: client_1.ProductType.SALES_PRODUCT,
-                    currency: _user.cityOfResidence === "Lagos" ? client_1.Currency.NGN : client_1.Currency.EUR,
+                    currency: (0, region_1.getCurrencyForCity)(_user.cityOfResidence),
                     createdBy: {
                         id: {
                             not: _user.id,

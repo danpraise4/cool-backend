@@ -9,6 +9,7 @@ import marketRoutes from "../../../features/market/routes/market.user.routes";
 import authAdminRoutes from "../../../features/authentication/routes/auth.admin.routes";
 import facilitiesRoutes from "../../../features/facilities/facilities.routes";
 import recycleRoutes from "../../../features/recycle/recycle.routes";
+import devRoutes from "../../../features/dev/dev.routes";
 const router = Router();
 
 const defaultRoutes = [
@@ -22,6 +23,7 @@ const defaultRoutes = [
   { path: "/community", route: communityRoutes },
   { path: "/facilities", route: facilitiesRoutes },
   { path: "/recycle", route: recycleRoutes },
+  { path: "/dev", route: devRoutes },
 ];
 
 defaultRoutes.forEach(({ path, route }) => {

@@ -15,7 +15,6 @@ class MaterialsService {
     }
     async getMaterials() {
         const cachedMaterials = await redis_service_1.default.instance.get("MATERIALS_CACHE");
-        console.log("cachedMaterials", cachedMaterials);
         if (cachedMaterials) {
             return JSON.parse(cachedMaterials);
         }

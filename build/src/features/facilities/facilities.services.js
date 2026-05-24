@@ -14,8 +14,6 @@ class FacilitiesService {
         this.AdminClient = adminClient.build();
     }
     async getFacilities(config) {
-        console.log(config);
-        console.log("Config");
         const facilities = await this.AdminClient.getFacilities({
             MaterialId: config.materialId,
             Latitude: config.Latitude,

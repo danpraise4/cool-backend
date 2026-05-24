@@ -13,83 +13,75 @@ const otp_service_1 = require("../../otp/otp.service");
 const google_auth_library_1 = require("google-auth-library");
 const app_config_1 = __importDefault(require("../../../shared/config/app.config"));
 const auth_utils_1 = require("../auth.utils");
+const app_exception_1 = __importDefault(require("../../../infastructure/https/exception/app.exception"));
+const http_status_1 = __importDefault(require("http-status"));
+const email_notification_service_1 = require("../../../shared/services/email/email-notification.service");
 exports.GOOGLE = app_config_1.default.GOOGLE;
 class AuthUserService {
-    constructor() { }
     otpService = new otp_service_1.OtpService();
     encryptionService = new encryption_service_1.default();
     tokenService = new token_service_1.default();
-    // Google OAuth client
     googleClient = new google_auth_library_1.OAuth2Client({
         clientId: exports.GOOGLE.CLIENT_ID,
         clientSecret: exports.GOOGLE.CLIENT_SECRET,
     });
     async register(data) {
-        try {
-            const { identifier, firstName, lastName, password, confirmPassword, phone, address, cityOfResidence, latitude, longitude, token: token_id, } = data;
-            const email = identifier.trim().toLowerCase();
-            // Check for existing verified user
-            const existingUser = await connect_1.default.user.findFirst({
-                where: {
-                    email,
-                },
-            });
-            if (existingUser) {
-                throw new Error("This email is already registered");
-            }
-            if (existingUser?.status === client_1.Status.DELETED) {
-                throw Error("Your account has been deleted. Please contact support if you believe this is an error.");
-            }
-            if (password !== confirmPassword) {
-                throw new Error("Password and confirm password do not match");
-            }
-            // check the tokenn
-            const verifiedOtp = await this.otpService.getOtp(token_id);
-            if (!verifiedOtp) {
-                throw new Error("Invalid OTP");
-            }
-            if (verifiedOtp.expiresAt < new Date()) {
-                throw new Error("OTP expired");
-            }
-            if (verifiedOtp.status !== app_constants_1.STATUS.VERIFIED) {
-                throw new Error("Invalid OTP");
-            }
-            const hashedPassword = await this.encryptionService.hashPassword(password);
-            const newUser = await connect_1.default.user.create({
-                data: {
-                    email,
-                    firstName: firstName,
-                    lastName: lastName,
-                    password: hashedPassword,
-                    isEmailVerified: true,
-                    address: address,
-                    phone: phone,
-                    cityOfResidence: cityOfResidence,
-                    isPhoneVerified: false,
-                    status: app_constants_1.STATUS.COMPLETED,
-                    latitude: latitude,
-                    longitude: longitude,
-                    locationAccuracy: client_1.LocationAccuracy.EXACT,
-                },
-            });
-            await this.otpService.deleteOtp(token_id);
-            const token = await this.generateToken(newUser.id, `${newUser.firstName} ${newUser.lastName}`);
-            return { user: newUser, token: token };
+        const { identifier, firstName, lastName, password, confirmPassword, phone, address, cityOfResidence, latitude, longitude, token: token_id, } = data;
+        const email = identifier.trim().toLowerCase();
+        const existingUser = await connect_1.default.user.findFirst({ where: { email } });
+        if (existingUser?.status === client_1.Status.DELETED) {
+            throw new app_exception_1.default("Your account has been deleted. Please contact support.", http_status_1.default.FORBIDDEN);
         }
-        catch (error) {
-            if (error instanceof Error) {
-                throw new Error(`User registration failed: ${error.message}`);
-            }
-            throw new Error("An unexpected error occurred during registration");
+        if (existingUser) {
+            throw new app_exception_1.default("This email is already registered", http_status_1.default.CONFLICT);
         }
+        if (password !== confirmPassword) {
+            throw new app_exception_1.default("Password and confirm password do not match", http_status_1.default.BAD_REQUEST);
+        }
+        const verifiedOtp = await this.otpService.getOtp(token_id);
+        if (!verifiedOtp || verifiedOtp.expiresAt < new Date()) {
+            throw new app_exception_1.default("OTP has expired", http_status_1.default.BAD_REQUEST);
+        }
+        if (verifiedOtp.status !== app_constants_1.STATUS.VERIFIED) {
+            throw new app_exception_1.default("OTP not verified", http_status_1.default.BAD_REQUEST);
+        }
+        const hashedPassword = await this.encryptionService.hashPassword(password);
+        const newUser = await connect_1.default.user.create({
+            data: {
+                email,
+                firstName,
+                lastName,
+                password: hashedPassword,
+                isEmailVerified: true,
+                address,
+                phone,
+                cityOfResidence,
+                isPhoneVerified: false,
+                status: app_constants_1.STATUS.COMPLETED,
+                latitude,
+                longitude,
+                locationAccuracy: client_1.LocationAccuracy.EXACT,
+                settings: {
+                    create: {
+                        isEmailNotificationsEnabled: true,
+                        isSmsNotificationsEnabled: true,
+                        isPushNotificationsEnabled: true,
+                    },
+                },
+            },
+        });
+        await this.otpService.deleteOtp(token_id);
+        const token = await this.generateToken(newUser.id, `${newUser.firstName} ${newUser.lastName}`);
+        email_notification_service_1.emailNotificationService.notifyUser(newUser.id, email_notification_service_1.EmailNotificationType.REGISTRATION, {
+            firstName: newUser.firstName,
+        });
+        return { user: newUser, token };
     }
     async checkUser(identifier) {
-        const email = identifier.trim().toLowerCase().trim();
-        const user = await connect_1.default.user.findFirst({
-            where: { email },
-        });
+        const email = identifier.trim().toLowerCase();
+        const user = await connect_1.default.user.findFirst({ where: { email } });
         if (user) {
-            throw new Error("Email already in use");
+            throw new app_exception_1.default("Email already in use", http_status_1.default.CONFLICT);
         }
         const otp = await this.otpService.createOtp(email);
         return otp;
@@ -98,7 +90,7 @@ class AuthUserService {
         const identifierData = (0, auth_utils_1.sanitizeIdentifier)(identifier);
         const verifiedOtp = await this.otpService.verifyOtp(identifierData.value, otp);
         if (!verifiedOtp) {
-            throw new Error("Invalid OTP");
+            throw new app_exception_1.default("Invalid OTP", http_status_1.default.BAD_REQUEST);
         }
         return { otp: verifiedOtp };
     }
@@ -114,52 +106,54 @@ class AuthUserService {
             where: { [identifierData.type]: identifierData.value },
         });
         if (!user) {
-            throw Error("Please check email and password");
+            throw new app_exception_1.default("Invalid email or password", http_status_1.default.UNAUTHORIZED);
         }
-        if (user?.status === client_1.Status.DELETED) {
-            throw Error("Your account has been deleted. Please contact support if you believe this is an error.");
+        if (user.status === client_1.Status.DELETED) {
+            throw new app_exception_1.default("Your account has been deleted. Please contact support.", http_status_1.default.FORBIDDEN);
         }
         if (user.authType === client_1.AuthType.GOOGLE) {
-            throw Error("Please login with Google");
+            throw new app_exception_1.default("Please sign in with Google", http_status_1.default.BAD_REQUEST);
         }
         const isPasswordValid = await this.encryptionService.comparePassword(user.password, password);
         if (!isPasswordValid) {
-            throw Error("Invalid password");
+            throw new app_exception_1.default("Invalid email or password", http_status_1.default.UNAUTHORIZED);
         }
-        return {
-            status: 200,
-            message: "Login successful",
-            user,
-        };
+        email_notification_service_1.emailNotificationService.notifyUser(user.id, email_notification_service_1.EmailNotificationType.LOGIN, {
+            firstName: user.firstName,
+        });
+        return { user };
     }
     async generateToken(id, name) {
-        const token = await this.tokenService.generateToken(id, name);
-        return token;
+        return this.tokenService.generateToken(id, name);
     }
     async logout(id) {
         await this.tokenService.deleteToken(id);
     }
-    async updatePassword(user, password, passwordConfirmation, oldPassword) {
-        if (password !== passwordConfirmation) {
-            throw Error("The new password and confirmation password do not match");
+    async updatePassword(user, newPassword, passwordConfirmation, oldPassword) {
+        if (newPassword !== passwordConfirmation) {
+            throw new app_exception_1.default("New password and confirmation do not match", http_status_1.default.BAD_REQUEST);
         }
-        const _user = await connect_1.default.user.findUnique({
-            where: { id: user.id },
-        });
-        const isPasswordValid = await this.encryptionService.comparePassword(_user?.password, oldPassword);
-        if (!isPasswordValid) {
-            throw Error("Invalid old password");
+        const _user = await connect_1.default.user.findUnique({ where: { id: user.id } });
+        if (!_user) {
+            throw new app_exception_1.default("User not found", http_status_1.default.NOT_FOUND);
         }
-        const hashedPassword = await this.encryptionService.hashPassword(password);
-        if (hashedPassword == oldPassword)
-            throw Error("New password can not be same as existing password");
-        const updatedUser = await connect_1.default.user.update({
+        const isOldPasswordValid = await this.encryptionService.comparePassword(_user.password, oldPassword);
+        if (!isOldPasswordValid) {
+            throw new app_exception_1.default("Current password is incorrect", http_status_1.default.BAD_REQUEST);
+        }
+        const isSamePassword = await this.encryptionService.comparePassword(_user.password, newPassword);
+        if (isSamePassword) {
+            throw new app_exception_1.default("New password cannot be the same as current password", http_status_1.default.BAD_REQUEST);
+        }
+        const hashedPassword = await this.encryptionService.hashPassword(newPassword);
+        const updated = await connect_1.default.user.update({
             where: { id: user.id },
-            data: {
-                password: hashedPassword,
-            },
+            data: { password: hashedPassword },
         });
-        return updatedUser;
+        email_notification_service_1.emailNotificationService.notifyUser(user.id, email_notification_service_1.EmailNotificationType.PASSWORD_CHANGED, {
+            firstName: updated.firstName,
+        });
+        return updated;
     }
     async googleAuth(data) {
         const ticket = await this.googleClient.verifyIdToken({
@@ -168,9 +162,8 @@ class AuthUserService {
         });
         const googlePayload = ticket.getPayload();
         if (!googlePayload) {
-            throw Error("Invalid Google token");
+            throw new app_exception_1.default("Invalid Google token", http_status_1.default.UNAUTHORIZED);
         }
-        console.log(googlePayload);
         let _user = await connect_1.default.user.findFirst({
             where: { email: googlePayload.email },
         });
@@ -184,23 +177,31 @@ class AuthUserService {
                     image: googlePayload.picture,
                     isEmailVerified: true,
                     authType: client_1.AuthType.GOOGLE,
+                    settings: {
+                        create: {
+                            isEmailNotificationsEnabled: true,
+                            isSmsNotificationsEnabled: true,
+                            isPushNotificationsEnabled: true,
+                        },
+                    },
                 },
             });
             const _token = await this.generateToken(_user.id, `${_user.firstName} ${_user.lastName}`);
-            return {
-                isNewUser: true,
-                user: _user,
-                token: _token,
-            };
+            email_notification_service_1.emailNotificationService.notifyUser(_user.id, email_notification_service_1.EmailNotificationType.REGISTRATION, {
+                firstName: _user.firstName,
+            });
+            return { isNewUser: true, user: _user, token: _token };
         }
         const _token = await this.generateToken(_user.id, `${_user.firstName} ${_user.lastName}`);
+        email_notification_service_1.emailNotificationService.notifyUser(_user.id, email_notification_service_1.EmailNotificationType.LOGIN, {
+            firstName: _user.firstName,
+        });
         return {
-            isNewUser: _user.cityOfResidence ? false : true,
+            isNewUser: !_user.cityOfResidence,
             user: _user,
             token: _token,
         };
     }
-    // Reset password
     async resetPassword(email) {
         const identifierData = (0, auth_utils_1.sanitizeIdentifier)(email);
         const user = await connect_1.default.user.findFirst({
@@ -215,10 +216,10 @@ class AuthUserService {
             },
         });
         if (!user) {
-            throw Error("Email not found or not registered");
+            throw new app_exception_1.default("Email not found", http_status_1.default.NOT_FOUND);
         }
         if (user.status === client_1.Status.DELETED) {
-            throw Error("Your account has been deleted. Please contact support if you believe this is an error.");
+            throw new app_exception_1.default("Your account has been deleted. Please contact support.", http_status_1.default.FORBIDDEN);
         }
         await this.otpService.createOtp(identifierData.value);
         return { ...user };
@@ -229,35 +230,33 @@ class AuthUserService {
             where: { [identifierData.type]: identifierData.value },
         });
         if (!user) {
-            throw Error("Email not found or not registered");
+            throw new app_exception_1.default("Email not found", http_status_1.default.NOT_FOUND);
         }
         const verifiedOtp = await this.otpService.verifyOtp(identifierData.value, otp);
         if (!verifiedOtp) {
-            throw Error("Invalid OTP");
+            throw new app_exception_1.default("Invalid OTP", http_status_1.default.BAD_REQUEST);
         }
         return verifiedOtp;
     }
     async resetPasswordUpdate(password, passwordConfirmation, token) {
         const verifiedOtp = await this.otpService.getOtp(token);
+        if (!verifiedOtp) {
+            throw new app_exception_1.default("Invalid or expired token", http_status_1.default.BAD_REQUEST);
+        }
         const identifierData = (0, auth_utils_1.sanitizeIdentifier)(verifiedOtp.identifier);
         const user = await connect_1.default.user.findFirst({
             where: { [identifierData.type]: identifierData.value },
         });
         if (!user) {
-            throw Error("Email not found or not registered");
+            throw new app_exception_1.default("User not found", http_status_1.default.NOT_FOUND);
         }
         if (password !== passwordConfirmation) {
-            throw Error("The new password and confirmation password do not match");
-        }
-        if (!verifiedOtp) {
-            throw Error("Invalid OTP");
+            throw new app_exception_1.default("Password and confirmation do not match", http_status_1.default.BAD_REQUEST);
         }
         const hashedPassword = await this.encryptionService.hashPassword(password);
         const updatedUser = await connect_1.default.user.update({
             where: { id: user.id },
-            data: {
-                password: hashedPassword,
-            },
+            data: { password: hashedPassword },
         });
         await this.otpService.deleteOtp(token);
         return updatedUser;

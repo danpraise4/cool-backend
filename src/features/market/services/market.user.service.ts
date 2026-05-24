@@ -16,6 +16,10 @@ import { Helper } from "../../../shared/helper/helper";
 import AppException from "../../../infastructure/https/exception/app.exception";
 import httpStatus from "http-status";
 import { getCurrencyForCity } from "../../../shared/config/region";
+import {
+  emailNotificationService,
+  EmailNotificationType,
+} from "../../../shared/services/email/email-notification.service";
 
 class MarketUserService {
   private readonly materialService: MaterialsService;
@@ -42,7 +46,7 @@ class MarketUserService {
 
     const currency = getCurrencyForCity(user.cityOfResidence);
 
-    return prisma.product.create({
+    const product = await prisma.product.create({
       data: {
         title: config.title,
         description: config.description,
@@ -54,6 +58,13 @@ class MarketUserService {
         ...(config.price ? { price: config.price } : {}),
       },
     });
+
+    emailNotificationService.notifyUser(user.id, EmailNotificationType.PRODUCT_UPLOADED, {
+      firstName: user.firstName,
+      productTitle: product.title,
+    });
+
+    return product;
   }
 
   async getAvailableProducts(userId: string, page = 1, limit = 10) {
@@ -350,9 +361,23 @@ class MarketUserService {
       throw new AppException("You have already requested this product", httpStatus.CONFLICT);
     }
 
-    return prisma.charityProductRequest.create({
+    const request = await prisma.charityProductRequest.create({
       data: { productId, userId },
     });
+
+    const requester = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+
+    emailNotificationService.notifyUser(product.userId, EmailNotificationType.CHARITY_REQUEST_RECEIVED, {
+      productTitle: product.title,
+      requesterName: requester
+        ? `${requester.firstName} ${requester.lastName}`.trim()
+        : "A user",
+    });
+
+    return request;
   }
 
   async toggleProductToCart(productId: string, userId: string) {
@@ -516,6 +541,18 @@ class MarketUserService {
           soldToId: request.userId,
         },
       });
+
+      emailNotificationService.notifyUser(
+        request.userId,
+        EmailNotificationType.CHARITY_REQUEST_ACCEPTED,
+        { productTitle: product.title }
+      );
+    } else if (status === "REJECTED") {
+      emailNotificationService.notifyUser(
+        request.userId,
+        EmailNotificationType.CHARITY_REQUEST_REJECTED,
+        { productTitle: product.title }
+      );
     }
 
     return prisma.charityProductRequest.update({
@@ -599,7 +636,7 @@ class MarketUserService {
       TransactionType.WITHDRAWAL
     );
 
-    return prisma.order.create({
+    const order = await prisma.order.create({
       data: {
         reference: Helper.generateOrderReference(),
         product: { connect: { id: productId } },
@@ -608,6 +645,28 @@ class MarketUserService {
         status: Status.PENDING,
       },
     });
+
+    emailNotificationService.notifyUser(userId, EmailNotificationType.ORDER_PLACED, {
+      productTitle: product.title,
+      amount: product.price,
+      currency: product.currency,
+      reference: order.reference,
+    });
+
+    const buyer = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+
+    emailNotificationService.notifyUser(product.userId, EmailNotificationType.ORDER_RECEIVED, {
+      productTitle: product.title,
+      amount: product.price,
+      currency: product.currency,
+      reference: order.reference,
+      buyerName: buyer ? `${buyer.firstName} ${buyer.lastName}`.trim() : "A buyer",
+    });
+
+    return order;
   };
 
   confirmOrder = async (orderId: string, userId: string) => {
@@ -656,6 +715,17 @@ class MarketUserService {
 
     // Refund competing pending orders outside the main transaction
     await this.refundPendingOrders(order.product.id, order.product.price);
+
+    emailNotificationService.notifyUser(
+      order.product.createdBy.id,
+      EmailNotificationType.ORDER_CONFIRMED,
+      {
+        productTitle: order.product.title,
+        amount: order.product.price,
+        currency: order.product.currency,
+        buyerName: `${order.user.firstName} ${order.user.lastName}`.trim(),
+      }
+    );
 
     return updatedOrder;
   };

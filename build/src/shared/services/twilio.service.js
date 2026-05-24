@@ -25,7 +25,7 @@ class TwilioService {
         }
     }
     async sendOTP(phoneNumber, otp) {
-        const message = `Your verification code is: ${otp}`;
+        const message = `${app_config_1.default.APP_NAME}: Your verification code is ${otp}. It expires in 5 minutes. Do not share this code.`;
         return this.sendSMS(phoneNumber, message);
     }
 }

@@ -7,6 +7,10 @@ import { ISettings, IUser } from "./user.intercase";
 import AdminServiceClient from "../../shared/services/admin/adminservice.client";
 import AdminService from "../../shared/services/admin/adminservice";
 import { Helper } from "../../shared/helper/helper";
+import {
+  emailNotificationService,
+  EmailNotificationType,
+} from "../../shared/services/email/email-notification.service";
 
 export class UserService {
   AdminClient: AdminService;
@@ -113,6 +117,10 @@ export class UserService {
     if (futureSchedules.length > 0) {
       throw new Error("You have upcoming recycle schedules. Please complete or cancel them before deleting your account.");
     }
+
+    emailNotificationService.notifyUser(userId, EmailNotificationType.ACCOUNT_DELETED, {
+      firstName: user.firstName,
+    });
 
     await prismaClient.user.update({
       where: { id: userId },

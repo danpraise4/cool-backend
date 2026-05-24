@@ -13,7 +13,8 @@
     "start": "node build/src/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "test:email": "npx ts-node scripts/test-email.ts"
   },
   "keywords": [],
   "author": "",

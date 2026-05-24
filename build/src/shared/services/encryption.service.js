@@ -41,31 +41,31 @@ const node_crypto_1 = require("node:crypto");
 const crypto = __importStar(require("crypto"));
 const forge = __importStar(require("node-forge"));
 const ALGORITHM = "aes-256-cbc";
-const KEY_LENGTH = 32; // 256 bits
-const IV_LENGTH = 16; // 128 bits
+const KEY_LENGTH = 32;
+const IV_LENGTH = 16;
+const BCRYPT_ROUNDS = 12;
 class EncryptionService {
     async hashPassword(password) {
-        const encryptedPassword = await bcrypt_1.default.hash(password, 14);
-        return encryptedPassword;
+        return bcrypt_1.default.hash(password, BCRYPT_ROUNDS);
     }
-    async comparePassword(password, storedPassword) {
-        const _checkPassword = await bcrypt_1.default.compare(storedPassword, password);
-        return _checkPassword;
+    /**
+     * @param storedHash  - bcrypt hash retrieved from the database
+     * @param plaintext   - plaintext password submitted by the user
+     */
+    async comparePassword(storedHash, plaintext) {
+        return bcrypt_1.default.compare(plaintext, storedHash);
     }
-    async hashString(string) {
-        const hashedString = (0, node_crypto_1.createHash)("sha512").update(string).digest("hex");
-        return hashedString;
+    async hashString(input) {
+        return (0, node_crypto_1.createHash)("sha512").update(input).digest("hex");
     }
-    // Function to derive an AES key from a password using Node.js crypto module
     deriveKey(password, salt) {
-        return crypto.pbkdf2Sync(password, salt, 100000, 32, "sha256"); // 32 bytes = 256 bits
+        return crypto.pbkdf2Sync(password, salt, 100000, KEY_LENGTH, "sha256");
     }
-    // Function to ensure key is 32 bytes (padding if necessary)
     ensureKeyLength(key) {
         if (key.length > KEY_LENGTH) {
             return Buffer.from(key.slice(0, KEY_LENGTH), "utf8");
         }
-        else if (key.length < KEY_LENGTH) {
+        if (key.length < KEY_LENGTH) {
             return Buffer.concat([
                 Buffer.from(key, "utf8"),
                 Buffer.alloc(KEY_LENGTH - key.length),
@@ -73,25 +73,18 @@ class EncryptionService {
         }
         return Buffer.from(key, "utf8");
     }
-    // Function to generate a random key
-    generateKey() {
-        return crypto.randomBytes(KEY_LENGTH);
-    }
-    // Function to encrypt text with a password and public key
     encodeString(text, key) {
         const iv = crypto.randomBytes(IV_LENGTH);
         const keyBuffer = this.ensureKeyLength(key);
         const cipher = crypto.createCipheriv(ALGORITHM, keyBuffer, iv);
         let encrypted = cipher.update(text, "utf8", "hex");
         encrypted += cipher.final("hex");
-        const encryptedText = iv.toString("hex") + ":" + encrypted;
-        return encryptedText;
+        return iv.toString("hex") + ":" + encrypted;
     }
-    // Function to decrypt text with a password and private key
     decodeString(encryptedText, key) {
-        const textParts = encryptedText.split(":");
-        const iv = Buffer.from(textParts.shift(), "hex");
-        const encrypted = textParts.join(":");
+        const parts = encryptedText.split(":");
+        const iv = Buffer.from(parts.shift(), "hex");
+        const encrypted = parts.join(":");
         const keyBuffer = this.ensureKeyLength(key);
         const decipher = crypto.createDecipheriv(ALGORITHM, keyBuffer, iv);
         let decrypted = decipher.update(encrypted, "hex", "utf8");
@@ -104,8 +97,7 @@ class EncryptionService {
         cipher.start({ iv: "" });
         cipher.update(forge.util.createBuffer(text, "utf8"));
         cipher.finish();
-        const encrypted = cipher.output;
-        return forge.util.encode64(encrypted.getBytes());
+        return forge.util.encode64(cipher.output.getBytes());
     }
 }
 exports.default = EncryptionService;

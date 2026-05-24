@@ -6,11 +6,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.convertToObjT = void 0;
 const node_fetch_1 = __importDefault(require("node-fetch"));
 const flutterwave_endpoints_1 = require("./flutterwave.endpoints");
-const convertToObjT = (params) => {
-    return Object.keys(params)
-        .map((key) => `${key}=${params[key]}`)
-        .join("&");
-};
+const convertToObjT = (params) => Object.keys(params)
+    .map((key) => `${key}=${params[key]}`)
+    .join("&");
 exports.convertToObjT = convertToObjT;
 class FlutterwaveUtil {
     publicKey;
@@ -27,50 +25,43 @@ class FlutterwaveUtil {
         };
     }
     async postRequest(headers, jsonData, url, baseUL) {
-        const data = await (0, node_fetch_1.default)(`${baseUL || flutterwave_endpoints_1.baseUrl}${url}`, {
+        const res = await (0, node_fetch_1.default)(`${baseUL || flutterwave_endpoints_1.baseUrl}${url}`, {
             method: "POST",
             headers,
             body: JSON.stringify(jsonData),
             timeout: 10000,
         });
-        const respStr = await data.text();
-        console.log(respStr);
+        const respStr = await res.text();
         let resp;
         try {
             resp = JSON.parse(respStr);
-            if (resp.status === "error") {
-                throw new Error(resp.message || "Request failed");
-            }
-            return resp;
         }
-        catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
-            throw new Error("Invalid response format");
+        catch {
+            throw new Error("Invalid JSON response from Flutterwave");
         }
+        if (resp.status === "error") {
+            throw new Error(resp.message || "Flutterwave request failed");
+        }
+        return resp;
     }
     async getRequest(headers, url) {
-        const data = await (0, node_fetch_1.default)(`${flutterwave_endpoints_1.baseUrl}${url}`, {
+        const res = await (0, node_fetch_1.default)(`${flutterwave_endpoints_1.baseUrl}${url}`, {
             method: "GET",
             headers,
             timeout: 10000,
         });
-        const respStr = await data.text();
+        const respStr = await res.text();
         let resp;
         try {
             resp = JSON.parse(respStr);
-            if (resp.status === "error") {
-                throw new Error(resp.message || "Request failed");
-            }
-            return resp;
         }
-        catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
-            throw new Error("Invalid response format");
+        catch {
+            throw new Error("Invalid JSON response from Flutterwave");
         }
+        if (resp.status === "error") {
+            throw new Error(resp.message || "Flutterwave request failed");
+        }
+        return resp;
     }
 }
 exports.default = FlutterwaveUtil;

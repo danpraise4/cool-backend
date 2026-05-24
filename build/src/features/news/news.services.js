@@ -6,47 +6,42 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.NewsService = void 0;
 const connect_1 = __importDefault(require("../../infastructure/database/postgreSQL/connect"));
 const blobstorage_service_1 = require("../../shared/services/azure/blobstorage.service");
+const client_1 = require("@prisma/client");
 const uuid_1 = require("uuid");
+const app_exception_1 = __importDefault(require("../../infastructure/https/exception/app.exception"));
+const http_status_1 = __importDefault(require("http-status"));
 class NewsService {
-    constructor() { }
-    async createNews(cofig) {
-        const _file = (0, uuid_1.v4)();
-        let _uploads = [];
-        if (cofig.post.image && cofig.post.image.length > 0) {
-            // Upload each image and collect responses
-            for (const image of cofig.post.image) {
-                const _upload = await blobstorage_service_1.AzureBlobService.instance.uploadBase64Image(image, `${_file}-${_uploads.length}`, "image/png");
-                _uploads.push(_upload);
+    async createNews(config) {
+        const uploads = [];
+        if (config.post.image?.length) {
+            for (const image of config.post.image) {
+                const upload = await blobstorage_service_1.AzureBlobService.instance.uploadBase64Image(image, `${(0, uuid_1.v4)()}-${uploads.length}`, "image/png");
+                uploads.push(upload);
             }
         }
-        const post = await connect_1.default.news.create({
+        return connect_1.default.news.create({
             data: {
-                title: cofig.post.title,
-                body: cofig.post.body,
-                adminId: cofig.admin.id,
-                media: _uploads.length > 0
-                    ? _uploads.map((upload) => ({
-                        url: upload.url,
-                        name: upload.blobName,
-                    }))
-                    : [],
+                title: config.post.title,
+                body: config.post.body,
+                adminId: config.admin.id,
+                media: uploads.map((u) => ({ url: u.url, name: u.blobName })),
             },
         });
-        return post;
     }
     async getNews(page = 1, pageSize = 20) {
-        const skip = Number((page - 1) * pageSize); // Ensure skip is a number
-        const take = Number(pageSize); // Ensure take is a number
-        const posts = await connect_1.default.news.findMany({
-            skip,
-            take,
-            orderBy: { createdAt: "desc" }, // Order posts by latest
-        });
-        const totalPosts = await connect_1.default.news.count(); // Total post count for pagination
+        const skip = (page - 1) * pageSize;
+        const where = { status: { not: client_1.Status.DELETED } };
+        const [posts, totalPosts] = await Promise.all([
+            connect_1.default.news.findMany({
+                where,
+                skip,
+                take: pageSize,
+                orderBy: { createdAt: "desc" },
+            }),
+            connect_1.default.news.count({ where }),
+        ]);
         return {
-            news: posts.map((post) => ({
-                ...post,
-            })),
+            news: posts,
             meta: {
                 currentPage: page,
                 pageSize,
@@ -56,59 +51,40 @@ class NewsService {
         };
     }
     async deleteNews(id, adminId) {
-        const post = await connect_1.default.news.findFirst({
-            where: { id, adminId },
-        });
+        const post = await connect_1.default.news.findFirst({ where: { id, adminId } });
         if (!post) {
-            throw new Error("Post not found or you don't have permission to delete it");
+            throw new app_exception_1.default("News not found or you don't have permission", http_status_1.default.NOT_FOUND);
         }
-        const deletedPost = await connect_1.default.news.update({
+        return connect_1.default.news.update({
             where: { id },
-            data: {
-                status: "DELETED",
-            },
+            data: { status: client_1.Status.DELETED },
         });
-        return deletedPost;
     }
     async updateNews(config) {
-        const existingPost = await connect_1.default.news.findFirst({
-            where: {
-                id: config.id,
-                adminId: config.adminId,
-            },
+        const existing = await connect_1.default.news.findFirst({
+            where: { id: config.id, adminId: config.adminId },
         });
-        if (!existingPost) {
-            throw new Error("Post not found or you don't have permission to update it");
+        if (!existing) {
+            throw new app_exception_1.default("News not found or you don't have permission", http_status_1.default.NOT_FOUND);
         }
-        let media = existingPost.media;
-        if (config.post.image && config.post.image.length > 0) {
-            const _file = (0, uuid_1.v4)();
-            let _uploads = [];
-            // Upload each image and collect responses
+        let media = existing.media;
+        if (config.post.image?.length) {
+            const uploads = [];
             for (const image of config.post.image) {
-                const _upload = await blobstorage_service_1.AzureBlobService.instance.uploadBase64Image(image, `${_file}-${_uploads.length}`, "image/png");
-                _uploads.push(_upload);
+                const upload = await blobstorage_service_1.AzureBlobService.instance.uploadBase64Image(image, `${(0, uuid_1.v4)()}-${uploads.length}`, "image/png");
+                uploads.push(upload);
             }
-            media = _uploads.map((upload) => ({
-                url: upload.url,
-                name: upload.blobName,
-            }));
+            media = uploads.map((u) => ({ url: u.url, name: u.blobName }));
         }
-        const updatedPost = await connect_1.default.news.update({
+        return connect_1.default.news.update({
             where: { id: config.id },
-            data: {
-                body: config.post.body,
-                media,
-            },
+            data: { body: config.post.body, title: config.post.title, media },
         });
-        return updatedPost;
     }
     async getNewsById(id) {
-        const post = await connect_1.default.news.findFirst({
-            where: { id },
-        });
+        const post = await connect_1.default.news.findFirst({ where: { id } });
         if (!post) {
-            throw new Error("Post not found");
+            throw new app_exception_1.default("News not found", http_status_1.default.NOT_FOUND);
         }
         return post;
     }

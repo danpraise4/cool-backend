@@ -39,9 +39,19 @@ class Helper {
     }
     static toDate(date_item) {
         if (typeof date_item === "string") {
-            const [day, month, year] = date_item.split("-");
-            const date = new Date(`${year}-${month}-${day}`);
-            return date;
+            const head = date_item.split("T")[0];
+            const parts = head.split("-");
+            if (parts.length === 3) {
+                const [a, b, c] = parts;
+                if (a.length === 4) {
+                    return new Date(Number(a), Number(b) - 1, Number(c));
+                }
+                const day = Number(a);
+                const month = Number(b) - 1;
+                const year = Number(c);
+                return new Date(year, month, day);
+            }
+            return new Date(date_item);
         }
         return date_item;
     }
@@ -77,6 +87,10 @@ class Helper {
                 return client_1.RecycleScheduleStatus.COMPLETED;
             case app_constants_1.RECYCLE_REQUEST_STATUS.Pending:
                 return client_1.RecycleScheduleStatus.PENDING;
+            case app_constants_1.RECYCLE_REQUEST_STATUS.Confirmed:
+                return client_1.RecycleScheduleStatus.IN_PROGRESS;
+            case app_constants_1.RECYCLE_REQUEST_STATUS.Completed:
+                return client_1.RecycleScheduleStatus.COMPLETED;
             case app_constants_1.RECYCLE_REQUEST_STATUS.Cancelled:
                 return client_1.RecycleScheduleStatus.CANCELLED;
             case app_constants_1.RECYCLE_REQUEST_STATUS.Rejected:

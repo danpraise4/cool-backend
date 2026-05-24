@@ -11,110 +11,37 @@ class Flutterwave extends flutterwave_utils_1.default {
         super(build);
     }
     async createCardCharge(data) {
-        try {
-            const response = await this.postRequest(this.buildHeader(), data, `${flutterwave_endpoints_1.endpoints.CREATE_CARD_CHARGE}`);
-            return response;
-        }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
+        const response = await this.postRequest(this.buildHeader(), data, flutterwave_endpoints_1.endpoints.CREATE_CARD_CHARGE);
+        return response;
     }
     async chargeCard(data) {
-        try {
-            const response = await this.postRequest(this.buildHeader(), data, `${flutterwave_endpoints_1.endpoints.CHARGE({ type: "card" })}`);
-            console.log(response);
-            if (response.status === "success") {
-                return response;
-            }
-            else {
-                throw new Error("Could not validate bvn");
-            }
+        const response = await this.postRequest(this.buildHeader(), data, flutterwave_endpoints_1.endpoints.CHARGE({ type: "card" }));
+        if (response.status !== "success") {
+            throw new Error(response.message || "Card charge failed");
         }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
+        return response;
     }
-    // Get Bank Account Details
     async getBankAccountDetails(data) {
-        try {
-            const response = await this.postRequest(this.buildHeader(), data, `${flutterwave_endpoints_1.endpoints.BANK_ACCOUNT_DETAILS}`);
-            return response;
-        }
-        catch (err) {
-            console.log(err);
-            throw new Error(err);
-        }
+        return this.postRequest(this.buildHeader(), data, flutterwave_endpoints_1.endpoints.BANK_ACCOUNT_DETAILS);
     }
     async resolveUK(data) {
-        try {
-            const response = await this.postRequest(this.buildHeader(), data, `${flutterwave_endpoints_1.endpoints.RESOLVE_UK}`, "https://api.flutterwave.com/");
-            console.log(response);
-            return response;
-        }
-        catch (err) {
-            console.log(err);
-            throw new Error(err);
-        }
+        return this.postRequest(this.buildHeader(), data, flutterwave_endpoints_1.endpoints.RESOLVE_UK, "https://api.flutterwave.com/");
     }
-    // Transfer to Bank
     async transferToBank(data) {
-        try {
-            const response = await this.postRequest(this.buildHeader(), data, `${flutterwave_endpoints_1.endpoints.TRANSFER_TO_BANK}`);
-            return response;
-        }
-        catch (err) {
-            console.log(err);
-            throw new Error(err);
-        }
+        return this.postRequest(this.buildHeader(), data, flutterwave_endpoints_1.endpoints.TRANSFER_TO_BANK);
     }
-    // Transfer to Bank
     async transferToBankUKUser(data) {
-        try {
-            const response = await this.postRequest(this.buildHeader(), data, `${flutterwave_endpoints_1.endpoints.TRANSFER_TO_BANK}`);
-            return response;
-        }
-        catch (err) {
-            console.log(err);
-            throw new Error(err);
-        }
+        return this.postRequest(this.buildHeader(), data, flutterwave_endpoints_1.endpoints.TRANSFER_TO_BANK);
     }
-    // Get Banks List
     async getBanks(city) {
-        try {
-            const response = await this.getRequest(this.buildHeader(), `${flutterwave_endpoints_1.endpoints.BANKS(city)}`);
-            return response;
-        }
-        catch (err) {
-            console.log(err);
-            throw new Error(err);
-        }
+        return this.getRequest(this.buildHeader(), flutterwave_endpoints_1.endpoints.BANKS(city));
     }
-    // Charge Bank
     async chargeBank(data) {
-        try {
-            const response = await this.postRequest(this.buildHeader(), data, `${flutterwave_endpoints_1.endpoints.CHARGE({ type: "bank_transfer" })}`);
-            if (response.status === "success") {
-                return response;
-            }
-            else {
-                throw new Error("Could not validate bvn");
-            }
+        const response = await this.postRequest(this.buildHeader(), data, flutterwave_endpoints_1.endpoints.CHARGE({ type: "bank_transfer" }));
+        if (response.status !== "success") {
+            throw new Error(response.message || "Bank charge failed");
         }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
+        return response;
     }
 }
 exports.default = Flutterwave;

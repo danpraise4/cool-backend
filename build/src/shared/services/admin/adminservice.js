@@ -1,5 +1,4 @@
 "use strict";
-/* eslint-disable @typescript-eslint/no-explicit-any */
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -12,266 +11,105 @@ class AdminService extends adminservice_utils_1.default {
     constructor() {
         super();
     }
-    // Get facilities
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async getFacilities(config) {
-        console.log(config);
-        console.log("Config");
-        try {
-            const response = await this.getRequest(this.buildHeader(), `${adminservice_endpoints_1.endpoints.GET_FACILITIES(config)}`);
-            if (response.isOk) {
-                return response;
-            }
-            else {
-                throw new Error(response.message);
-            }
-        }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
+        const response = await this.getRequest(this.buildHeader(), adminservice_endpoints_1.endpoints.GET_FACILITIES(config));
+        if (!response.isOk)
+            throw new Error(response.message);
+        return response;
     }
-    // Get facility by id
     async getFacilityById(id) {
-        try {
-            const cachedFacility = await redis_service_1.default.instance.get(`facility:${id}`);
-            if (cachedFacility) {
-                return {
-                    isOk: true,
-                    message: "Facility fetched successfully",
-                    statusCode: 200,
-                    payload: JSON.parse(cachedFacility),
-                };
-            }
-            if (!cachedFacility) {
-                const facility = await connect_1.default.facility.findUnique({
-                    where: {
-                        id: id,
-                    },
-                });
-                if (facility) {
-                    await redis_service_1.default.instance.set(`facility:${id}`, JSON.stringify(facility), 3600 // 1 hour TTL
-                    );
-                    return {
-                        isOk: true,
-                        message: "Facility fetched successfully",
-                        statusCode: 200,
-                        payload: {
-                            id: facility.id,
-                            name: facility.name,
-                            address: facility.address,
-                            profilePhoto: facility.profilePhoto,
-                            rating: facility.rating,
-                            workingDays: facility.workingDays,
-                            materialUnitPrice: facility.materialUnitPrice,
-                            distanceInMiles: facility.distanceInMiles,
-                        },
-                    };
-                }
-            }
-            console.log("Got here 5");
-            /// ----
-            const response = await this.getRequest(this.buildHeader(), adminservice_endpoints_1.endpoints.GET_FACILITY_BY_ID(id));
-            console.log("Response ------- ");
-            console.log(response);
-            if (response.isOk) {
-                await redis_service_1.default.instance.set(`facility:${id}`, JSON.stringify(response.payload), 3600 // 1 hour TTL
-                );
-                return response;
-            }
-            else {
-                throw new Error(response.message);
-            }
+        const cached = await redis_service_1.default.instance.get(`facility:${id}`);
+        if (cached) {
+            return {
+                isOk: true,
+                message: "Facility fetched successfully",
+                statusCode: 200,
+                payload: JSON.parse(cached),
+            };
         }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
+        const local = await connect_1.default.facility.findUnique({ where: { id } });
+        if (local) {
+            const payload = {
+                id: local.id,
+                name: local.name,
+                address: local.address,
+                profilePhoto: local.profilePhoto,
+                rating: local.rating,
+                workingDays: local.workingDays,
+                materialUnitPrice: local.materialUnitPrice,
+                distanceInMiles: local.distanceInMiles,
+            };
+            await redis_service_1.default.instance.set(`facility:${id}`, JSON.stringify(payload), 3600);
+            return { isOk: true, message: "Facility fetched successfully", statusCode: 200, payload };
         }
+        const response = await this.getRequest(this.buildHeader(), adminservice_endpoints_1.endpoints.GET_FACILITY_BY_ID(id));
+        if (!response.isOk)
+            throw new Error(response.message);
+        await redis_service_1.default.instance.set(`facility:${id}`, JSON.stringify(response.payload), 3600);
+        return response;
     }
-    ///
-    // Get facility by id
-    async getFacilityByItsID(id) {
-        try {
-            console.log("Got here 5");
-            /// ----
-            const response = await this.getRequest(this.buildHeader(), adminservice_endpoints_1.endpoints.GET_FACILITY_BY_ID(id));
-            console.log("Response ------- ");
-            console.log(response);
-            if (response.isOk) {
-                await redis_service_1.default.instance.set(`facility:${id}`, JSON.stringify(response.payload), 3600 // 1 hour TTL
-                );
-                return response;
-            }
-            else {
-                throw new Error(response.message);
-            }
-        }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
-    }
-    // Get material categories
     async getMaterial() {
-        try {
-            const response = await this.getRequest(this.buildHeader(), `${adminservice_endpoints_1.endpoints.GET_MATERIAL_CATEGORIES()}`);
-            if (response.isOk) {
-                return response;
-            }
-            else {
-                throw new Error(response.message);
-            }
-        }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
+        const response = await this.getRequest(this.buildHeader(), adminservice_endpoints_1.endpoints.GET_MATERIAL_CATEGORIES());
+        if (!response.isOk)
+            throw new Error(response.message);
+        return response;
     }
     async getMaterialById(id) {
-        try {
-            const cachedMaterial = await redis_service_1.default.instance.get(`material:${id}`);
-            if (cachedMaterial) {
-                return {
-                    isOk: true,
-                    message: "Material fetched successfully",
-                    statusCode: 200,
-                    payload: JSON.parse(cachedMaterial),
-                };
-            }
-            if (!cachedMaterial) {
-                const material = await connect_1.default.material.findUnique({
-                    where: {
-                        id: id,
-                    },
-                });
-                if (material) {
-                    await redis_service_1.default.instance.set(`material:${id}`, JSON.stringify(material), 3600 // 1 hour TTL
-                    );
-                    return {
-                        isOk: true,
-                        message: "Material fetched successfully",
-                        statusCode: 200,
-                        payload: {
-                            id: Number(material.id),
-                            category: material.category,
-                            icon: material.icon,
-                        },
-                    };
-                }
-            }
-            const response = await this.getRequest(this.buildHeader(), `${adminservice_endpoints_1.endpoints.GET_MATERIAL_CATEGORIES()}`);
-            if (response.isOk) {
-                const material = response.payload.find((item) => item.id === Number(id));
-                if (!material) {
-                    throw new Error("Material not found");
-                }
-                return {
-                    ...response,
-                    payload: material,
-                };
-            }
-            else {
-                throw new Error(response.message);
-            }
+        const cached = await redis_service_1.default.instance.get(`material:${id}`);
+        if (cached) {
+            return {
+                isOk: true,
+                message: "Material fetched successfully",
+                statusCode: 200,
+                payload: JSON.parse(cached),
+            };
         }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
+        const local = await connect_1.default.material.findUnique({ where: { id } });
+        if (local) {
+            const payload = { id: Number(local.id), category: local.category, icon: local.icon };
+            await redis_service_1.default.instance.set(`material:${id}`, JSON.stringify(payload), 3600);
+            return { isOk: true, message: "Material fetched successfully", statusCode: 200, payload };
         }
+        const response = await this.getRequest(this.buildHeader(), adminservice_endpoints_1.endpoints.GET_MATERIAL_CATEGORIES());
+        if (!response.isOk)
+            throw new Error(response.message);
+        const material = response.payload.find((item) => item.id === Number(id));
+        if (!material)
+            throw new Error("Material not found");
+        return { ...response, payload: material };
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async createRecycleRequest(request) {
-        try {
-            const response = await this.postRequest(this.buildHeader(), request, `${adminservice_endpoints_1.endpoints.CREATE_RECYCLE_REQUEST}`);
-            console.log("Response ------- ");
-            console.log(response);
-            if (response.isOk) {
-                return response;
-            }
-            else {
-                throw new Error(response.message);
-            }
-        }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await this.postRequest(this.buildHeader(), request, adminservice_endpoints_1.endpoints.CREATE_RECYCLE_REQUEST);
+        if (!response.isOk)
+            throw new Error(response.message);
+        return response;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async updateRecycleRequest(id, request) {
-        try {
-            const response = await this.patchRequest(this.buildHeader(), request, `${adminservice_endpoints_1.endpoints.PATCH_RECYCLE_REQUEST(id)}`);
-            console.log("Response ------- ");
-            console.log(response);
-            if (response.isOk) {
-                console.log(response);
-                return response;
-            }
-            else {
-                console.log(response);
-                throw new Error(response.message);
-            }
-        }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await this.patchRequest(this.buildHeader(), request, adminservice_endpoints_1.endpoints.PATCH_RECYCLE_REQUEST(id));
+        if (!response.isOk)
+            throw new Error(response.message);
+        return response;
     }
-    // Confirm recycle transaction
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async confirmRecycleTransaction(id, request) {
-        try {
-            const response = await this.postRequest(this.buildHeader(), request, `${adminservice_endpoints_1.endpoints.CONFIRM_RECYCLE_TRANSACTION(id)}`);
-            if (response.isOk) {
-                return response;
-            }
-            else {
-                throw new Error(response.message);
-            }
-        }
-        catch (err) {
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await this.postRequest(this.buildHeader(), request, adminservice_endpoints_1.endpoints.CONFIRM_RECYCLE_TRANSACTION(id));
+        if (!response.isOk)
+            throw new Error(response.message);
+        return response;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async getRecycleRequestById(config) {
-        try {
-            const response = await this.getRequest(this.buildHeader(), `/recyclers/my/${config.recyclerId}/transaction/${config.transactionId}`);
-            console.log("Response ------- "); //
-            console.log(response);
-            if (response.isOk) {
-                return response;
-            }
-            else {
-                throw new Error(response.message);
-            }
-        }
-        catch (err) {
-            console.log(err);
-            if (err instanceof Error) {
-                throw new Error(err.message);
-            }
-            throw new Error(err);
-        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await this.getRequest(this.buildHeader(), `/recyclers/my/${config.recyclerId}/transaction/${config.transactionId}`);
+        if (!response.isOk)
+            throw new Error(response.message);
+        return response;
     }
 }
 exports.default = AdminService;

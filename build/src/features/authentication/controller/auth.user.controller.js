@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const http_status_1 = __importDefault(require("http-status"));
-const app_exception_1 = __importDefault(require("../../../infastructure/https/exception/app.exception"));
+const response_1 = require("../../../shared/helper/response");
 class AuthUserController {
     authService;
     locationService;
@@ -17,107 +17,88 @@ class AuthUserController {
     login = async (req, res, next) => {
         try {
             const { email, password } = req.body;
-            const result = await this.authService.login(email, password);
-            // generate token
-            if (result.status === 200) {
-                const token = await this.authService.generateToken(result.user.id, `${result.user.firstName} ${result.user.lastName}`);
-                res.status(http_status_1.default.OK).json({
-                    message: "Login successful",
-                    data: {
-                        user: result.user,
-                        token,
-                    },
-                });
-            }
-            else {
-                return res.status(result.status).json(result);
-            }
+            const { user } = await this.authService.login(email, password);
+            const token = await this.authService.generateToken(user.id, `${user.firstName} ${user.lastName}`);
+            delete user.password;
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Login successful",
+                data: { user, token },
+            });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     register = async (req, res, next) => {
         try {
             const data = await this.authService.register(req.body);
-            res.status(http_status_1.default.OK).json({
-                message: `Register successful. For testing purposes, your OTP is ${data.token}`,
-                data,
+            delete data.user.password;
+            (0, response_1.sendSuccess)(res, http_status_1.default.CREATED, {
+                message: "Registration successful",
+                data: { user: data.user, token: data.token },
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     verifyOtp = async (req, res, next) => {
         try {
             const { identifier, otp } = req.body;
             const data = await this.authService.verifyOtp(identifier, otp);
-            res.status(http_status_1.default.OK).json({
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "OTP verified successfully",
                 data,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     checkUser = async (req, res, next) => {
         try {
             const { identifier } = req.body;
-            const data = await this.authService.checkUser(identifier);
-            res.status(http_status_1.default.OK).json({
-                message: `User checked successfully. For testing purposes, your OTP is ${data}`,
-                status: "success",
-                data: {
-                    email_available: true,
-                },
+            await this.authService.checkUser(identifier);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Email is available",
+                data: { email_available: true },
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     resendOtp = async (req, res, next) => {
         try {
             const { identifier } = req.body;
-            const data = await this.authService.resendOtp(identifier);
-            res.status(http_status_1.default.OK).json({
-                message: "OTP resent successfully",
-                data,
-            });
+            await this.authService.resendOtp(identifier);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "OTP resent successfully" });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     updatePassword = async (req, res, next) => {
         try {
             const { oldPassword, password, passwordConfirmation } = req.body;
-            const user = req.user;
-            const updatedUser = await this.authService.updatePassword(user, password, passwordConfirmation, oldPassword);
-            res.status(http_status_1.default.OK).json({
-                status: "success",
-                message: "Password updated successfully",
-                data: updatedUser,
-            });
+            await this.authService.updatePassword(req.user, password, passwordConfirmation, oldPassword);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Password updated successfully" });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // Google Auth
     googleAuth = async (req, res, next) => {
         try {
             const data = await this.authService.googleAuth(req.body);
-            res.status(http_status_1.default.OK).json({
-                message: "Google auth successful",
-                status: "success",
+            delete data.user.password;
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Google authentication successful",
                 data,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     getLocation = async (req, res, next) => {
@@ -127,56 +108,57 @@ class AuthUserController {
                 lat: Number(lat),
                 long: Number(long),
             });
-            res.status(http_status_1.default.OK).json({
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Location fetched successfully",
                 data: location,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // Reset password
     resetPassword = async (req, res, next) => {
         try {
             const { email } = req.body;
-            const data = await this.authService.resetPassword(email);
-            res.status(http_status_1.default.OK).json({
-                message: "Password reset successful",
-                status: "success",
-                data,
+            await this.authService.resetPassword(email);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Password reset OTP sent to your email",
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     verifyResetPassword = async (req, res, next) => {
         try {
             const { email, otp } = req.body;
             const data = await this.authService.verifyResetPassword(email, otp);
-            res.status(http_status_1.default.OK).json({
-                message: "Password reset successful",
-                status: "success",
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "OTP verified successfully",
                 data,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     resetPasswordUpdate = async (req, res, next) => {
         try {
             const { password, passwordConfirmation, token } = req.body;
-            const updatedUser = await this.authService.resetPasswordUpdate(password, passwordConfirmation, token);
-            res.status(http_status_1.default.OK).json({
-                status: "success",
-                message: "Password updated successfully",
-                data: updatedUser,
-            });
+            await this.authService.resetPasswordUpdate(password, passwordConfirmation, token);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Password updated successfully" });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
+        }
+    };
+    logout = async (req, res, next) => {
+        try {
+            await this.authService.logout(req.user.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Logged out successfully" });
+        }
+        catch (error) {
+            next(error);
         }
     };
 }

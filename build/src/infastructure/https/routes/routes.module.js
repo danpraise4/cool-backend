@@ -14,6 +14,7 @@ const market_user_routes_1 = __importDefault(require("../../../features/market/r
 const auth_admin_routes_1 = __importDefault(require("../../../features/authentication/routes/auth.admin.routes"));
 const facilities_routes_1 = __importDefault(require("../../../features/facilities/facilities.routes"));
 const recycle_routes_1 = __importDefault(require("../../../features/recycle/recycle.routes"));
+const dev_routes_1 = __importDefault(require("../../../features/dev/dev.routes"));
 const router = (0, express_1.Router)();
 const defaultRoutes = [
     { path: "/user", route: user_routes_1.default },
@@ -26,6 +27,7 @@ const defaultRoutes = [
     { path: "/community", route: community_routes_1.default },
     { path: "/facilities", route: facilities_routes_1.default },
     { path: "/recycle", route: recycle_routes_1.default },
+    { path: "/dev", route: dev_routes_1.default },
 ];
 defaultRoutes.forEach(({ path, route }) => {
     router.use(path, route);

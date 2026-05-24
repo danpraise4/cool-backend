@@ -92,7 +92,7 @@ class TokenService {
             return forge.util.encode64(encrypted.getBytes());
         }
         catch (error) {
-            console.log(error);
+            throw new Error(`Failed to encrypt payload: ${error.message}`);
         }
     }
 }

@@ -9,25 +9,21 @@ const blobstorage_service_1 = require("../../shared/services/azure/blobstorage.s
 const uuid_1 = require("uuid");
 class CommunityService {
     constructor() { }
-    async createCommunnityPost(cofig) {
-        const _file = (0, uuid_1.v4)();
+    async createCommunnityPost(config) {
         let _uploads = [];
-        console.log("here");
-        if (!cofig.post.content && cofig.post.images.length == 0) {
-            throw new Error("You have to specify a content or an image");
+        if (!config.post.content && config.post.images.length === 0) {
+            throw new Error("You must provide content or at least one image");
         }
-        console.log(cofig.post);
-        if (cofig.post.images) {
-            const imagesList = cofig.post.images;
-            for (const image of imagesList) {
-                const upload = await blobstorage_service_1.AzureBlobService.instance.uploadBase64Image(image, `${_file}-${(0, uuid_1.v4)()}`, "image/png");
+        if (config.post.images?.length) {
+            for (const image of config.post.images) {
+                const upload = await blobstorage_service_1.AzureBlobService.instance.uploadBase64Image(image, `${(0, uuid_1.v4)()}-${(0, uuid_1.v4)()}`, "image/png");
                 _uploads.push(upload);
             }
         }
         const post = await connect_1.default.post.create({
             data: {
-                body: cofig.post.content,
-                userId: cofig.user.id,
+                body: config.post.content,
+                userId: config.user.id,
                 images: _uploads.map((upload) => upload.url),
             },
         });

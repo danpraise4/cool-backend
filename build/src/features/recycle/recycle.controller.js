@@ -5,8 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RecycleController = void 0;
 const http_status_1 = __importDefault(require("http-status"));
-const app_exception_1 = __importDefault(require("../../infastructure/https/exception/app.exception"));
-const http_status_2 = __importDefault(require("http-status"));
 class RecycleController {
     recycleService;
     constructor(recycleService) {
@@ -18,13 +16,10 @@ class RecycleController {
                 schedule: req.body,
                 user: req.user,
             });
-            res.status(http_status_1.default.CREATED).json({
-                message: "Schedule created successfully",
-                data: schedule,
-            });
+            res.status(http_status_1.default.CREATED).json({ message: "Schedule created successfully", data: schedule });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     createRecycleScheduleReminder = async (req, res, next) => {
@@ -33,14 +28,10 @@ class RecycleController {
                 userId: req.user.id,
                 scheduleid: req.body.scheduleid,
             });
-            res.status(http_status_1.default.OK).json({
-                message: "Reminder created successfully",
-                status: "success",
-                data: reminder,
-            });
+            res.status(http_status_1.default.OK).json({ message: "Reminder created successfully", status: "success", data: reminder });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     getRecycleScheduleByTransactionId = async (req, res, next) => {
@@ -49,14 +40,10 @@ class RecycleController {
                 recyclerId: req.user.id,
                 transactionId: req.body.id,
             });
-            res.status(http_status_1.default.OK).json({
-                message: "Schedule fetched successfully",
-                status: "success",
-                data: schedule,
-            });
+            res.status(http_status_1.default.OK).json({ message: "Schedule fetched successfully", status: "success", data: schedule });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     updateRecycleSchedule = async (req, res, next) => {
@@ -66,31 +53,22 @@ class RecycleController {
                 userId: req.user.id,
                 schedule: req.body,
             });
-            res.status(http_status_1.default.OK).json({
-                message: "Schedule updated successfully",
-                status: "success",
-                data: schedule,
-            });
+            res.status(http_status_1.default.OK).json({ message: "Schedule updated successfully", status: "success", data: schedule });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     getRecycleSchedules = async (req, res, next) => {
         try {
-            const { date } = req.query;
             const schedules = await this.recycleService.getRecycleSchedules({
                 userId: req.user.id,
-                date: date,
+                date: req.query.date,
             });
-            console.log("schedules", schedules);
-            res.status(http_status_1.default.OK).json({
-                message: "Schedules fetched successfully",
-                data: schedules,
-            });
+            res.status(http_status_1.default.OK).json({ message: "Schedules fetched successfully", data: schedules });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     getRecycleSchedulesById = async (req, res, next) => {
@@ -99,80 +77,51 @@ class RecycleController {
                 id: req.params.id,
                 userId: req.user.id,
             });
-            res.status(http_status_1.default.OK).json({
-                message: "Schedule fetched successfully",
-                data: schedule,
-            });
+            res.status(http_status_1.default.OK).json({ message: "Schedule fetched successfully", data: schedule });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     getRecycleScheduleDates = async (req, res, next) => {
         try {
-            const schedules = await this.recycleService.getRecycleScheduleDates({
-                userId: req.user.id,
-            });
-            res.status(http_status_1.default.OK).json({
-                message: "Schedules fetched successfully",
-                data: schedules,
-            });
+            const schedules = await this.recycleService.getRecycleScheduleDates({ userId: req.user.id });
+            res.status(http_status_1.default.OK).json({ message: "Schedules fetched successfully", data: schedules });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // recycle chat
     getRecycleChats = async (req, res, next) => {
         try {
-            const chats = await this.recycleService.getRecycleChats({
-                userID: req.user.id,
-            });
-            res.status(http_status_1.default.OK).json({
-                message: "Chats fetched successfully",
-                data: chats,
-            });
+            const chats = await this.recycleService.getRecycleChats({ userID: req.user.id });
+            res.status(http_status_1.default.OK).json({ message: "Chats fetched successfully", data: chats });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // get recycle facility data
     getRecycleFacilityData = async (req, res, next) => {
         try {
-            const { id } = req.params;
             const facilityData = await this.recycleService.getRecycleFacilityData({
                 userID: req.user.id,
-                facilityId: id,
+                facilityId: req.params.id,
             });
-            console.log("facilityData", facilityData);
-            res.status(http_status_1.default.OK).json({
-                message: "Facility data fetched successfully",
-                status: "success",
-                data: facilityData,
-            });
+            res.status(http_status_1.default.OK).json({ message: "Facility data fetched successfully", status: "success", data: facilityData });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
     getFacilityChatById = async (req, res, next) => {
         try {
-            const chat = await this.recycleService.getRecycleChats({
-                userID: req.params.id,
-            });
-            res.status(http_status_1.default.OK).json({
-                message: "Chat fetched successfully",
-                status: "success",
-                data: chat,
-            });
+            const chat = await this.recycleService.getRecycleChats({ userID: req.params.id });
+            res.status(http_status_1.default.OK).json({ message: "Chat fetched successfully", status: "success", data: chat });
         }
         catch (error) {
-            console.log("error", error);
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // initiate recycle chat
     initiateRecycleChat = async (req, res, next) => {
         try {
             const chat = await this.recycleService.initiateRecycleChat({
@@ -180,17 +129,12 @@ class RecycleController {
                 withID: req.body.withID,
                 type: req.body.type,
             });
-            res.status(http_status_1.default.OK).json({
-                message: "Chat initiated successfully",
-                status: "success",
-                data: chat,
-            });
+            res.status(http_status_1.default.OK).json({ message: "Chat initiated successfully", status: "success", data: chat });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // initiate recycle chat
     initiateAdminRecycleChat = async (req, res, next) => {
         try {
             const chat = await this.recycleService.initiateRecycleChat({
@@ -198,17 +142,12 @@ class RecycleController {
                 userID: req.body.userID,
                 type: req.body.type,
             });
-            res.status(http_status_1.default.OK).json({
-                message: "Chat initiated successfully",
-                status: "success",
-                data: chat,
-            });
+            res.status(http_status_1.default.OK).json({ message: "Chat initiated successfully", status: "success", data: chat });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // User Recycling Analytics
     getUserRecyclingAnalytics = async (req, res, next) => {
         const { start, end } = req.query;
         try {
@@ -216,43 +155,28 @@ class RecycleController {
                 start: start ? new Date(start) : undefined,
                 end: end ? new Date(end) : undefined,
             });
-            res.status(http_status_1.default.OK).json({
-                message: "User recycling analytics fetched successfully",
-                data: userAnalytics,
-            });
+            res.status(http_status_1.default.OK).json({ message: "User recycling analytics fetched successfully", data: userAnalytics });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // Completed Recycle Schedules
     getCompletedRecycleSchedules = async (req, res, next) => {
         try {
-            const completedRecycleSchedules = await this.recycleService.getCompletedRecycleSchedules({
-                userId: req.user.id,
-            });
-            res.status(http_status_1.default.OK).json({
-                message: "Completed recycle schedules fetched successfully",
-                status: "success",
-                data: completedRecycleSchedules,
-            });
+            const completedRecycleSchedules = await this.recycleService.getCompletedRecycleSchedules({ userId: req.user.id });
+            res.status(http_status_1.default.OK).json({ message: "Completed recycle schedules fetched successfully", status: "success", data: completedRecycleSchedules });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // Top Recyclers
     getTopRecyclers = async (_req, res, next) => {
         try {
             const topRecyclers = await this.recycleService.getTopRecyclers();
-            res.status(http_status_1.default.OK).json({
-                message: "Top recyclers fetched successfully",
-                status: "success",
-                data: topRecyclers,
-            });
+            res.status(http_status_1.default.OK).json({ message: "Top recyclers fetched successfully", status: "success", data: topRecyclers });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_2.default.BAD_REQUEST));
+            next(error);
         }
     };
 }

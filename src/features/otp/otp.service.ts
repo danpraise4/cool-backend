@@ -5,6 +5,7 @@ import { Helper } from "../../shared/helper/helper";
 import RedisService from "../../shared/services/redis.service";
 import { TwilioService } from "../../shared/services/twilio.service";
 import { ResendService, Template } from "../../shared/services/resend.service";
+import { sanitizeIdentifier } from "../authentication/auth.utils";
 
 const OTP_TTL_SECONDS = 5 * 60; // 5 minutes
 
@@ -94,9 +95,13 @@ export class OtpService {
   }
 
   private async deliver(identifier: string, token: string): Promise<void> {
-    await Promise.allSettled([
-      this.twilioService.sendOTP(identifier, token),
-      this.resendService.sendEmail(identifier, Template.OTP, { otp: token }),
-    ]);
+    const { type, value } = sanitizeIdentifier(identifier);
+
+    if (type === "email") {
+      await this.resendService.sendEmail(value, Template.OTP, { otp: token });
+      return;
+    }
+
+    await this.twilioService.sendOTP(value, token);
   }
 }

@@ -7,6 +7,10 @@ import { RecycleChatType, RecycleScheduleStatus, User } from "@prisma/client";
 import AppException from "../../infastructure/https/exception/app.exception";
 import httpStatus from "http-status";
 import { getCountryForCity } from "../../shared/config/region";
+import {
+  emailNotificationService,
+  EmailNotificationType,
+} from "../../shared/services/email/email-notification.service";
 
 export class RecycleService {
   private readonly adminClient: AdminService;
@@ -76,7 +80,7 @@ export class RecycleService {
       },
     });
 
-    return prismaClient.recycleSchedule.create({
+    const schedule = await prismaClient.recycleSchedule.create({
       data: {
         type,
         transactionId: adminRequest.payload.transactionId,
@@ -87,6 +91,15 @@ export class RecycleService {
         userId,
       },
     });
+
+    emailNotificationService.notifyUser(userId, EmailNotificationType.RECYCLE_REQUEST_SUBMITTED, {
+      firstName,
+      facilityName: facility.payload.name,
+      materialName: material.payload.category,
+      scheduledDate: Helper.toDate(dates[0]).toLocaleDateString("en-GB"),
+    });
+
+    return schedule;
   }
 
   public async updateRecycleSchedule(config: {

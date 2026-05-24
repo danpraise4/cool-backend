@@ -4,13 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const http_status_1 = __importDefault(require("http-status"));
-const app_exception_1 = __importDefault(require("../../infastructure/https/exception/app.exception"));
-// Go back after topup
-// Show List first not map
-// Romove Added cards screen
-// Check Continue on recycle
-// Call, Chat, on Recycle Flow
-// Top Nav Bar
+const response_1 = require("../../shared/helper/response");
 class WalletController {
     walletService;
     constructor(walletService) {
@@ -18,68 +12,69 @@ class WalletController {
     }
     paymentHook = async (req, res, next) => {
         try {
-            // Wallet
-            const wallet = await this.walletService.paymentHook(req.body);
-            res.status(http_status_1.default.OK).json({
+            const webhookHeader = req.headers["verif-hash"];
+            const result = await this.walletService.paymentHook(req.body, webhookHeader);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Hook received successfully",
-                data: wallet,
+                data: result,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     getWallet = async (req, res, next) => {
         try {
-            // Wallet
             const wallet = await this.walletService.getWallet(req.user.id);
-            res.status(http_status_1.default.OK).json({
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Wallet fetched successfully",
                 data: wallet,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     getWalletTransactions = async (req, res, next) => {
         try {
-            // const { page, limit } = req.query;
             const transactions = await this.walletService.getTransactions(req.user.id);
-            res.status(http_status_1.default.OK).json({
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Transactions fetched successfully",
                 data: transactions,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
-    // Top up wallet
     topUpWalletCard = async (req, res, next) => {
         try {
             const transaction = await this.walletService.createCardCharge({
                 user: req.user,
                 card: req.body,
             });
-            res.status(http_status_1.default.OK).json({
-                ...transaction,
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Card charge initiated",
+                data: transaction,
             });
         }
         catch (error) {
-            console.log("error", error);
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     createCardChargeURL = async (req, res, next) => {
         try {
-            const url = await this.walletService.createCardChargeURL({ user: req.user, amount: req.body.amount });
-            res.status(http_status_1.default.OK).json({
-                ...url,
+            const url = await this.walletService.createCardChargeURL({
+                user: req.user,
+                amount: req.body.amount,
+            });
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Payment link created",
+                data: url,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     getBankAccountDetails = async (req, res, next) => {
@@ -88,27 +83,22 @@ class WalletController {
                 account_number: req.body.account_number,
                 account_bank: req.body.account_bank,
             });
-            res.status(http_status_1.default.OK).json({
-                message: "Bank account details fetched successfully",
-                status: "success",
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Bank account details fetched",
                 data: bankAccount,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     resolveUK = async (req, res, next) => {
         try {
             const uk = await this.walletService.resolveUK(req.body);
-            res.status(http_status_1.default.OK).json({
-                message: "UK resolved successfully",
-                status: "success",
-                data: uk,
-            });
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, { message: "Account resolved", data: uk });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     transferToBankUKUser = async (req, res, next) => {
@@ -122,15 +112,13 @@ class WalletController {
                 account_name,
                 swift_code,
             });
-            res.status(http_status_1.default.OK).json({
-                message: "Transfer to bank user successful",
-                status: "success",
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Transfer initiated successfully",
                 data: transaction,
             });
         }
         catch (error) {
-            console.log("error", error);
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     transferToBank = async (req, res, next) => {
@@ -142,38 +130,38 @@ class WalletController {
                 account_number,
                 account_bank,
             });
-            res.status(http_status_1.default.OK).json({
-                ...transaction,
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Transfer initiated successfully",
+                data: transaction,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     getBanksList = async (req, res, next) => {
         try {
             const user = req.user;
-            const banks = await this.walletService.getBanksList(user.cityOfResidence);
-            res.status(http_status_1.default.OK).json({
+            const banks = await this.walletService.getBanksList(user);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Banks fetched successfully",
                 data: banks,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     creditUserWallet = async (req, res, next) => {
         try {
             const data = await this.walletService.creditUserWallet(req.body);
-            res.status(http_status_1.default.OK).json({
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Wallet credited successfully",
-                status: "success",
-                data: data,
+                data,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
     topupBank = async (req, res, next) => {
@@ -182,14 +170,13 @@ class WalletController {
                 user: req.user,
                 amount: req.body.amount,
             });
-            res.status(http_status_1.default.OK).json({
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Bank charge created successfully",
-                status: "success",
-                data: data,
+                data,
             });
         }
         catch (error) {
-            return next(new app_exception_1.default(error.message, error.status || http_status_1.default.BAD_REQUEST));
+            next(error);
         }
     };
 }

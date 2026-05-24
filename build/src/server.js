@@ -36,7 +36,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const http_1 = __importDefault(require("http"));
 const app_1 = __importDefault(require("./app"));
 const socket_io_1 = require("socket.io");
@@ -44,70 +43,56 @@ const app_config_1 = __importDefault(require("./shared/config/app.config"));
 const redis_service_1 = __importDefault(require("./shared/services/redis.service"));
 const blobstorage_service_1 = require("./shared/services/azure/blobstorage.service");
 const socket_service_1 = __importStar(require("./shared/services/socket/socket.service"));
+const logger_1 = __importDefault(require("./shared/services/logger"));
 require("./shared/jobs");
-// Use PORT from env (Koyeb/Cloud Run set this; often 8000); fallback 8080 for local
 const port = Number(process.env.PORT || app_config_1.default.PORT) || 8080;
-const host = "0.0.0.0"; // required for containers so health checks can reach the app
+const host = "0.0.0.0";
 const server = http_1.default.createServer(app_1.default);
-// Initialize Redis
 redis_service_1.default.getInstance();
 redis_service_1.default.instance.checkConnection();
-// Configure Socket.IO with proper CORS and transport options
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: "*", // Allow all origins for external users
+        origin: app_config_1.default.CORS_ORIGIN === "*" ? true : app_config_1.default.CORS_ORIGIN.split(",").map((o) => o.trim()),
         methods: ["GET", "POST"],
-        allowedHeaders: ["*"],
-        credentials: true
+        credentials: true,
     },
-    transports: ["websocket", "polling"], // Enable both WebSocket and polling
-    allowEIO3: true, // Allow Engine.IO v3 clients
-    pingTimeout: 60000, // 60 seconds
-    pingInterval: 25000, // 25 seconds
-    upgradeTimeout: 10000, // 10 seconds
-    maxHttpBufferSize: 1e6, // 1MB
+    transports: ["websocket", "polling"],
+    allowEIO3: true,
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    upgradeTimeout: 10000,
+    maxHttpBufferSize: 1e6,
     allowUpgrades: true,
-    perMessageDeflate: {
-        threshold: 1024,
-        concurrencyLimit: 10,
-        memLevel: 7
-    }
+    perMessageDeflate: { threshold: 1024, concurrencyLimit: 10, memLevel: 7 },
 });
 io.use(socket_service_1.socketUserMiddleware);
 socket_service_1.default.getInstance(io);
-// Initialize Azure Blob Service (non-blocking; server starts even if blob is unavailable)
 try {
     blobstorage_service_1.AzureBlobService.getInstance(app_config_1.default.CLOUDINARY.CLOUD_NAME, app_config_1.default.CLOUDINARY.API_KEY, app_config_1.default.CLOUDINARY.API_SECRET, app_config_1.default.CLOUDINARY.UPLOAD_PRESET);
 }
 catch (err) {
-    console.warn("Azure Blob Service init skipped (server will continue):", err?.message);
+    logger_1.default.warn({ err }, "Storage service init skipped — server will continue");
 }
-// Handle server errors
 server.on("error", (error) => {
-    console.error("Server error:", error);
+    logger_1.default.error({ error }, "HTTP server error");
 });
 server.listen(port, host, () => {
-    console.info(`App is running on http://${host}:${port}`);
+    logger_1.default.info(`${app_config_1.default.APP_NAME} running on http://${host}:${port} [${app_config_1.default.NODE_ENV}]`);
 });
-const exitHandler = () => {
-    if (server) {
-        server.close(() => {
-            console.error("Server closed");
-            process.exit(1);
-        });
-    }
-    else {
-        process.exit(1);
-    }
+const shutdown = (signal) => {
+    logger_1.default.info(`${signal} received — shutting down gracefully`);
+    server.close(() => {
+        logger_1.default.info("HTTP server closed");
+        process.exit(0);
+    });
 };
-const unexpectedErrorHandler = (error) => {
-    console.error(error);
-    exitHandler();
-};
-process.on("uncaughtException", unexpectedErrorHandler);
-process.on("unhandledRejection", unexpectedErrorHandler);
-process.on("SIGTERM", () => {
-    if (server) {
-        server.close();
-    }
+process.on("uncaughtException", (error) => {
+    logger_1.default.fatal({ error }, "Uncaught exception");
+    shutdown("uncaughtException");
 });
+process.on("unhandledRejection", (reason) => {
+    logger_1.default.fatal({ reason }, "Unhandled rejection");
+    shutdown("unhandledRejection");
+});
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

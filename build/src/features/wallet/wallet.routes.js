@@ -32,8 +32,8 @@ router.route("/transfer-to-bank-uk-user").post(auth_user_middleware_1.isUserAuth
 router.route("/resolve-uk").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.resolveUK);
 // Top up Bank
 router.route("/topup-bank").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.topupBank);
-// Credit User Wallet
+// Credit User Wallet — requires authentication
 router
     .route("/credit-user")
-    .post((0, app_validate_1.default)(wallet_validator_1.creditUserWalletValidator), controller_module_1.walletController.creditUserWallet);
+    .post(auth_user_middleware_1.isUserAuthenticated, (0, app_validate_1.default)(wallet_validator_1.creditUserWalletValidator), controller_module_1.walletController.creditUserWallet);
 exports.default = router;

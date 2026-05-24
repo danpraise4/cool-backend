@@ -12,6 +12,10 @@ import { flutterwaveBankCountryCode, inferWalletCurrencyForNewUser } from "./wal
 import logger from "../../shared/services/logger";
 import AppException from "../../infastructure/https/exception/app.exception";
 import httpStatus from "http-status";
+import {
+  emailNotificationService,
+  EmailNotificationType,
+} from "../../shared/services/email/email-notification.service";
 
 export class WalletService {
   private readonly flutterwaveClient: Flutterwave;
@@ -108,6 +112,12 @@ export class WalletService {
           metadata: { flw_ref },
         },
       });
+    });
+
+    emailNotificationService.notifyUser(account.userId, EmailNotificationType.WALLET_TOPUP, {
+      amount,
+      currency: account.currency,
+      reference: flw_ref,
     });
 
     return transaction;
@@ -281,6 +291,12 @@ export class WalletService {
       });
     });
 
+    emailNotificationService.notifyUser(wallet.userId, EmailNotificationType.WALLET_WITHDRAWAL, {
+      amount: numericAmount,
+      currency: wallet.currency,
+      reference: ref,
+    });
+
     return { transfer: response, transaction };
   }
 
@@ -349,6 +365,12 @@ export class WalletService {
           metadata: { flutterwave: response as object },
         },
       });
+    });
+
+    emailNotificationService.notifyUser(wallet.userId, EmailNotificationType.WALLET_WITHDRAWAL, {
+      amount: numericAmount,
+      currency: wallet.currency,
+      reference: ref,
     });
 
     return { transfer: response, transaction };

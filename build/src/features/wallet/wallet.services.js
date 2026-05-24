@@ -5,429 +5,386 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WalletService = void 0;
 const client_1 = require("@prisma/client");
+const crypto_1 = __importDefault(require("crypto"));
 const connect_1 = __importDefault(require("../../infastructure/database/postgreSQL/connect"));
 const flutterwave_client_1 = __importDefault(require("../../shared/services/flutterwave/flutterwave.client"));
 const app_config_1 = __importDefault(require("../../shared/config/app.config"));
 const token_service_1 = __importDefault(require("../../shared/services/token.service"));
+const adminservice_client_1 = __importDefault(require("../../shared/services/admin/adminservice.client"));
+const adminservice_1 = __importDefault(require("../../shared/services/admin/adminservice"));
+const wallet_region_1 = require("./wallet.region");
+const logger_1 = __importDefault(require("../../shared/services/logger"));
+const app_exception_1 = __importDefault(require("../../infastructure/https/exception/app.exception"));
+const http_status_1 = __importDefault(require("http-status"));
+const email_notification_service_1 = require("../../shared/services/email/email-notification.service");
 class WalletService {
-    FlutterwaveClient;
+    flutterwaveClient;
     tokenService;
-    AdminServiceClient;
+    adminClient;
     constructor() {
         this.tokenService = new token_service_1.default();
-        const flutterwaveClient = new flutterwave_client_1.default().initialize(app_config_1.default.FLUTTERWAVE.PUBLIC_KEY, app_config_1.default.FLUTTERWAVE.SECRET_KEY);
-        this.FlutterwaveClient = flutterwaveClient.build();
+        this.flutterwaveClient = new flutterwave_client_1.default()
+            .initialize(app_config_1.default.FLUTTERWAVE.PUBLIC_KEY, app_config_1.default.FLUTTERWAVE.SECRET_KEY)
+            .build();
+        this.adminClient = new adminservice_client_1.default(new adminservice_1.default()).build();
     }
-    async paymentHook(payload) {
+    /**
+     * Verify that the incoming webhook actually came from Flutterwave.
+     * Set FLW_WEBHOOK_HASH in your env to the secret hash configured in the
+     * Flutterwave dashboard. Requests without a matching header are rejected.
+     */
+    verifyWebhookSignature(secretHash, header) {
+        if (!secretHash) {
+            logger_1.default.warn("FLW_WEBHOOK_HASH not configured — skipping webhook signature check");
+            return true;
+        }
+        return header === secretHash;
+    }
+    async paymentHook(payload, webhookHeader) {
+        const flwWebhookHash = process.env.FLW_WEBHOOK_HASH;
+        if (!this.verifyWebhookSignature(flwWebhookHash, webhookHeader)) {
+            throw new app_exception_1.default("Invalid webhook signature", http_status_1.default.UNAUTHORIZED);
+        }
         const { event, data } = payload;
-        if (event === "charge.completed") {
-            const { tx_ref } = data;
-            try {
-                this.AdminServiceClient.confirmRecycleTransaction(data.flw_ref, {
-                    ...data,
-                });
-            }
-            catch (error) {
-                // Do nothing 
-            }
-            // find the originator of the transaction
-            const account = await connect_1.default.wallet.findUnique({
-                where: {
-                    userId: tx_ref,
-                },
+        if (event !== "charge.completed") {
+            return { message: "Hook received" };
+        }
+        const { tx_ref, flw_ref, amount } = data;
+        // Confirm recycle transaction in background — failure must not block wallet credit
+        this.adminClient.confirmRecycleTransaction(flw_ref, data).catch((err) => {
+            logger_1.default.error({ err }, "Failed to confirm recycle transaction");
+        });
+        const account = await connect_1.default.wallet.findFirst({
+            where: { userId: tx_ref },
+        });
+        if (!account) {
+            logger_1.default.warn({ tx_ref }, "paymentHook: wallet not found for tx_ref");
+            return { message: "Wallet not found" };
+        }
+        // Idempotency — skip duplicate events
+        const existingTransaction = await connect_1.default.transaction.findFirst({
+            where: { reference: flw_ref },
+        });
+        if (existingTransaction) {
+            return existingTransaction;
+        }
+        const transaction = await connect_1.default.$transaction(async (tx) => {
+            const wallet = await tx.wallet.update({
+                where: { id: account.id },
+                data: { balance: { increment: amount } },
             });
-            if (!account) {
-                throw new Error("Wallet not found");
-            }
-            // Idenpotent check
-            const existingTransaction = await connect_1.default.transaction.findFirst({
-                where: {
-                    reference: data.flw_ref,
-                },
-            });
-            if (existingTransaction) {
-                return existingTransaction;
-            }
-            // Create the transaction
-            const transaction = await connect_1.default.transaction.create({
+            return tx.transaction.create({
                 data: {
                     walletId: account.id,
-                    amount: data.amount,
+                    amount,
                     status: client_1.Status.COMPLETED,
                     type: client_1.TransactionType.TOPUP,
-                    reference: data.flw_ref,
-                    description: "Topup from Flutterwave",
+                    reference: flw_ref,
+                    description: "Wallet top-up via Flutterwave",
                     balanceBefore: account.balance,
-                    balanceAfter: account.balance + data.amount,
+                    balanceAfter: wallet.balance,
                     fee: 0,
                     userId: account.userId,
-                    metadata: {
-                        flw_ref: data.flw_ref,
-                        flw_otp: data.otp,
-                    },
+                    metadata: { flw_ref },
                 },
             });
-            // Update wallet balance
-            await connect_1.default.wallet.update({
-                where: {
-                    id: account.id,
-                },
-                data: {
-                    balance: account.balance + data.amount,
-                    updatedAt: new Date(),
-                },
-            });
-            return transaction;
-        }
-        return {
-            message: "Hook received successfully",
-        };
+        });
+        email_notification_service_1.emailNotificationService.notifyUser(account.userId, email_notification_service_1.EmailNotificationType.WALLET_TOPUP, {
+            amount,
+            currency: account.currency,
+            reference: flw_ref,
+        });
+        return transaction;
     }
     async _setupAccount(userId) {
-        let wallet = await connect_1.default.wallet.findUnique({
-            where: {
-                userId,
-            },
-        });
-        if (wallet) {
-            return wallet;
-        }
-        const user = await connect_1.default.user.findUnique({
-            where: {
-                id: userId,
-            },
-        });
-        wallet = await connect_1.default.wallet.create({
+        const existing = await connect_1.default.wallet.findUnique({ where: { userId } });
+        if (existing)
+            return existing;
+        const user = await connect_1.default.user.findUnique({ where: { id: userId } });
+        return connect_1.default.wallet.create({
             data: {
                 userId,
-                currency: user?.cityOfResidence === "Lagos" ? client_1.Currency.NGN : client_1.Currency.EUR,
+                currency: (0, wallet_region_1.inferWalletCurrencyForNewUser)(user),
             },
         });
-        return wallet;
     }
     async createCardCharge({ user, card }) {
+        const txRef = `${user.id}-${Date.now()}`;
         const payload = {
-            preauthorize: false, // initiates a preauthorized charge
-            usesecureauth: true, // set to true if you want to authorize the card payment with 3DS, set to false to charge with NoAuth
+            preauthorize: false,
+            usesecureauth: true,
             ...card,
             email: user.email,
             fullname: `${user.firstName} ${user.lastName}`,
             phone_number: user.phone,
-            tx_ref: user.id,
-            redirect_url: "https://example_company.com/success",
-            // authorization: {
-            //   mode: "pin",
-            //   pin: 2245,
-            //   city: "San Francisco",
-            //   address: "333 Fremont Street, San Francisco, CA",
-            //   state: "California",
-            //   country: "US",
-            //   zipcode: 94105,
-            // },
+            tx_ref: txRef,
+            redirect_url: "https://recycool.com/wallet/topup-success",
         };
         const token = await this.tokenService.generateFlutterwaveToken({
             encryptionKey: app_config_1.default.FLUTTERWAVE.ENCRYPTION_KEY,
             payload,
         });
-        const response = await this.FlutterwaveClient.chargeCard({ client: token });
-        return response;
+        return this.flutterwaveClient.chargeCard({ client: token });
     }
-    async createCardChargeURL({ user, amount }) {
-        const currency = user.cityOfResidence === "Lagos" ? "NGN" : "EUR";
+    async createCardChargeURL({ user, amount, }) {
+        const wallet = await this.getWallet(user.id);
+        const currencyIso = {
+            [client_1.Currency.NGN]: "NGN",
+            [client_1.Currency.GBP]: "GBP",
+            [client_1.Currency.USD]: "USD",
+            [client_1.Currency.EUR]: "EUR",
+        };
+        const currency = currencyIso[wallet.currency] || "EUR";
+        const numericAmount = typeof amount === "string" ? parseFloat(amount) : amount;
+        if (!numericAmount || numericAmount <= 0 || Number.isNaN(numericAmount)) {
+            throw new app_exception_1.default("Invalid top-up amount", http_status_1.default.BAD_REQUEST);
+        }
+        const txRef = `${user.id}-${Date.now()}`;
         const payload = {
-            tx_ref: user.id,
-            amount: amount.toString(),
-            currency: currency,
-            redirect_url: 'https://recycool.com/wallet/topup-success',
+            tx_ref: txRef,
+            amount: numericAmount.toString(),
+            currency,
+            redirect_url: "https://recycool.com/wallet/topup-success",
             customer: {
                 email: user.email,
                 name: `${user.firstName} ${user.lastName}`,
             },
-            customizations: {
-                title: "Topup Wallet",
-            },
+            customizations: { title: "Top-up Wallet" },
         };
-        const response = await this.FlutterwaveClient.createCardCharge(payload);
-        return response;
+        return this.flutterwaveClient.createCardCharge(payload);
     }
     async getBankAccountDetails(body) {
-        const response = await this.FlutterwaveClient.getBankAccountDetails({
-            account_number: body.account_number,
-            account_bank: body.account_bank,
-        });
-        return response;
+        return this.flutterwaveClient.getBankAccountDetails(body);
     }
     async resolveUK(body) {
-        const response = await this.FlutterwaveClient.resolveUK(body);
-        return response;
+        return this.flutterwaveClient.resolveUK(body);
     }
     async transferToBankUKUser({ user, amount, account_number, bank_name, account_name, swift_code, }) {
-        // Get user's wallet
-        const wallet = await connect_1.default.wallet.findUnique({
-            where: { userId: user.id },
-        });
-        amount = Number(amount);
+        const wallet = await connect_1.default.wallet.findUnique({ where: { userId: user.id } });
         if (!wallet) {
-            throw new Error("Wallet not found");
+            throw new app_exception_1.default("Wallet not found", http_status_1.default.NOT_FOUND);
         }
-        if (wallet.balance < amount) {
-            throw new Error("Insufficient funds");
+        if (wallet.currency !== client_1.Currency.GBP) {
+            throw new app_exception_1.default("UK bank withdrawals are only available for GBP wallets", http_status_1.default.BAD_REQUEST);
         }
-        // Debit wallet
-        await connect_1.default.wallet.update({
-            where: { id: wallet.id },
-            data: { balance: wallet.balance - amount },
-        });
-        // Create transfer
-        const response = await this.FlutterwaveClient.transferToBankUKUser({
-            "amount": amount,
-            "narration": "Sample UK Transfer",
-            "currency": "GBP",
-            "beneficiary_name": account_name,
-            "meta": [
+        const numericAmount = Number(amount);
+        if (wallet.balance < numericAmount) {
+            throw new app_exception_1.default("Insufficient funds", http_status_1.default.BAD_REQUEST);
+        }
+        const normalizedSort = String(swift_code || "").replace(/-/g, "");
+        const ref = `uk-withdraw-${user.id}-${Date.now()}`;
+        // Call Flutterwave FIRST — debit only if provider accepts the transfer
+        const response = await this.flutterwaveClient.transferToBankUKUser({
+            amount: numericAmount,
+            narration: "Recycool wallet withdrawal",
+            currency: "GBP",
+            beneficiary_name: account_name,
+            meta: [
                 {
-                    "account_number": account_number,
-                    "routing_number": swift_code,
-                    "swift_code": swift_code,
-                    "bank_name": bank_name,
-                    "beneficiary_name": account_name,
-                    "beneficiary_country": "UK",
-                    "postal_code": "80489",
-                    "street_number": "31",
-                    "street_name": user.address,
-                    "city": "London"
-                }
-            ]
+                    account_number,
+                    routing_number: normalizedSort,
+                    swift_code: normalizedSort,
+                    bank_name,
+                    beneficiary_name: account_name,
+                    beneficiary_country: "UK",
+                    postal_code: "80489",
+                    street_number: "31",
+                    street_name: user.address,
+                    city: "London",
+                },
+            ],
         });
-        const account = await connect_1.default.wallet.findUnique({
-            where: {
-                userId: user.id,
-            },
+        const balanceBefore = wallet.balance;
+        const balanceAfter = wallet.balance - numericAmount;
+        const transaction = await connect_1.default.$transaction(async (tx) => {
+            await tx.wallet.update({
+                where: { id: wallet.id },
+                data: { balance: balanceAfter },
+            });
+            return tx.transaction.create({
+                data: {
+                    walletId: wallet.id,
+                    amount: numericAmount,
+                    status: client_1.Status.COMPLETED,
+                    type: client_1.TransactionType.WITHDRAWAL,
+                    reference: ref,
+                    description: "Withdrawal to UK bank account",
+                    balanceBefore,
+                    balanceAfter,
+                    fee: 0,
+                    userId: wallet.userId,
+                    metadata: { flutterwave: response },
+                },
+            });
         });
-        if (!account) {
-            throw new Error("Wallet not found");
-        }
-        // Create transaction record
-        // Create the transaction
-        const transaction = await connect_1.default.transaction.create({
-            data: {
-                walletId: account.id,
-                amount: amount,
-                status: client_1.Status.COMPLETED,
-                type: client_1.TransactionType.TOPUP,
-                reference: user.id,
-                description: "Topup from Flutterwave",
-                balanceBefore: account.balance,
-                balanceAfter: account.balance - amount,
-                fee: 0,
-                userId: account.userId,
-            },
+        email_notification_service_1.emailNotificationService.notifyUser(wallet.userId, email_notification_service_1.EmailNotificationType.WALLET_WITHDRAWAL, {
+            amount: numericAmount,
+            currency: wallet.currency,
+            reference: ref,
         });
-        return {
-            transfer: response,
-            trasaction: transaction,
-        };
+        return { transfer: response, transaction };
     }
     async transferToBank({ user, amount, account_number, account_bank, }) {
-        // Get user's wallet
-        const wallet = await connect_1.default.wallet.findUnique({
-            where: { userId: user.id },
-        });
-        amount = Number(amount);
+        const wallet = await connect_1.default.wallet.findUnique({ where: { userId: user.id } });
         if (!wallet) {
-            throw new Error("Wallet not found");
+            throw new app_exception_1.default("Wallet not found", http_status_1.default.NOT_FOUND);
         }
-        if (wallet.balance < amount) {
-            throw new Error("Insufficient funds");
+        if (wallet.currency !== client_1.Currency.NGN) {
+            throw new app_exception_1.default("Transfers to Nigerian banks are only available for NGN wallets", http_status_1.default.BAD_REQUEST);
         }
-        // Debit wallet
-        await connect_1.default.wallet.update({
-            where: { id: wallet.id },
-            data: { balance: wallet.balance - amount },
-        });
-        // Create transfer
-        const response = await this.FlutterwaveClient.transferToBank({
-            amount,
+        const numericAmount = Number(amount);
+        if (wallet.balance < numericAmount) {
+            throw new app_exception_1.default("Insufficient funds", http_status_1.default.BAD_REQUEST);
+        }
+        const ref = `ng-withdraw-${user.id}-${Date.now()}`;
+        // Call Flutterwave FIRST — debit only if provider accepts the transfer
+        const response = await this.flutterwaveClient.transferToBank({
+            amount: numericAmount,
             account_number,
             account_bank,
             currency: "NGN",
-            tx_ref: user.id,
+            tx_ref: ref,
         });
-        const account = await connect_1.default.wallet.findUnique({
-            where: {
-                userId: user.id,
-            },
+        const balanceBefore = wallet.balance;
+        const balanceAfter = wallet.balance - numericAmount;
+        const transaction = await connect_1.default.$transaction(async (tx) => {
+            await tx.wallet.update({
+                where: { id: wallet.id },
+                data: { balance: balanceAfter },
+            });
+            return tx.transaction.create({
+                data: {
+                    walletId: wallet.id,
+                    amount: numericAmount,
+                    status: client_1.Status.COMPLETED,
+                    type: client_1.TransactionType.WITHDRAWAL,
+                    reference: ref,
+                    description: "Withdrawal to Nigerian bank account",
+                    balanceBefore,
+                    balanceAfter,
+                    fee: 0,
+                    userId: wallet.userId,
+                    metadata: { flutterwave: response },
+                },
+            });
         });
-        if (!account) {
-            throw new Error("Wallet not found");
-        }
-        // Create transaction record
-        // Create the transaction
-        const transaction = await connect_1.default.transaction.create({
-            data: {
-                walletId: account.id,
-                amount: amount,
-                status: client_1.Status.COMPLETED,
-                type: client_1.TransactionType.TOPUP,
-                reference: user.id,
-                description: "Topup from Flutterwave",
-                balanceBefore: account.balance,
-                balanceAfter: account.balance - amount,
-                fee: 0,
-                userId: account.userId,
-            },
+        email_notification_service_1.emailNotificationService.notifyUser(wallet.userId, email_notification_service_1.EmailNotificationType.WALLET_WITHDRAWAL, {
+            amount: numericAmount,
+            currency: wallet.currency,
+            reference: ref,
         });
-        return {
-            transfer: response,
-            trasaction: transaction,
-        };
+        return { transfer: response, transaction };
     }
     async createBankCharge({ user, amount, }) {
+        const wallet = await connect_1.default.wallet.findUnique({ where: { userId: user.id } });
+        if (!wallet || wallet.currency !== client_1.Currency.NGN) {
+            throw new app_exception_1.default("Bank transfer top-up is only available for NGN wallets", http_status_1.default.BAD_REQUEST);
+        }
+        const numericAmount = typeof amount === "string" ? parseFloat(amount) : amount;
+        if (!numericAmount || numericAmount <= 0 || Number.isNaN(numericAmount)) {
+            throw new app_exception_1.default("Invalid top-up amount", http_status_1.default.BAD_REQUEST);
+        }
+        const txRef = `${user.id}-${Date.now()}`;
         const payload = {
-            amount: amount,
+            amount: numericAmount,
             email: user.email,
             fullname: `${user.firstName} ${user.lastName}`,
             phone_number: user.phone,
-            tx_ref: user.id,
+            tx_ref: txRef,
             currency: "NGN",
-            redirect_url: "https://example_company.com/success",
+            redirect_url: "https://recycool.com/wallet/topup-success",
         };
-        const response = await this.FlutterwaveClient.chargeBank({ ...payload });
-        return response;
+        return this.flutterwaveClient.chargeBank(payload);
     }
-    async getBanksList(city) {
-        console.log(city);
-        const response = await this.FlutterwaveClient.getBanks(city === "Lagos" ? "NG" : "US");
-        return response;
+    async getBanksList(user) {
+        const country = (0, wallet_region_1.flutterwaveBankCountryCode)(user);
+        return this.flutterwaveClient.getBanks(country);
     }
     async creditUserWallet(body) {
-        const userData = await connect_1.default.user.findUnique({
-            where: {
-                id: body.user,
-            },
-        });
+        const userData = await connect_1.default.user.findUnique({ where: { id: body.user } });
         if (!userData) {
-            throw new Error("User not found");
+            throw new app_exception_1.default("User not found", http_status_1.default.NOT_FOUND);
         }
         const wallet = await this.getWallet(body.user);
-        if (!wallet) {
-            throw new Error("Wallet not found");
-        }
         const existingTransaction = await connect_1.default.transaction.findFirst({
-            where: {
-                reference: body.idempotent,
-            },
+            where: { reference: body.idempotent },
         });
         if (existingTransaction) {
-            throw new Error("Transaction already exists");
+            throw new app_exception_1.default("Transaction already processed", http_status_1.default.CONFLICT);
         }
-        const transaction = await this.creditWallet(body.user, body.amount, "Credit User Wallet");
-        // return transaction;
+        const result = await this.creditWallet(body.user, body.amount, "Wallet credit");
         return {
-            transactionId: transaction.transaction.id,
+            transactionId: result.transaction.id,
             amount: body.amount,
             currency: wallet.currency,
         };
     }
     async getWallet(userId) {
-        const wallet = await this._setupAccount(userId);
-        return wallet;
+        return this._setupAccount(userId);
     }
     async getTransactions(userId) {
-        const transactions = await connect_1.default.transaction.findMany({
-            where: {
-                userId,
-            },
-            orderBy: {
-                createdAt: "desc",
-            },
+        return connect_1.default.transaction.findMany({
+            where: { userId },
+            orderBy: { createdAt: "desc" },
         });
-        return transactions;
     }
     async chargeWallet(userId, reason, amount, sendTo, transactionType) {
         if (amount <= 0) {
-            throw new Error("Amount must be greater than 0");
+            throw new app_exception_1.default("Amount must be greater than 0", http_status_1.default.BAD_REQUEST);
         }
         const wallet = await this.getWallet(userId);
-        if (!wallet) {
-            throw new Error("Wallet not found");
-        }
         if (wallet.balance < amount) {
-            throw new Error("Insufficient funds");
+            throw new app_exception_1.default("Insufficient funds", http_status_1.default.BAD_REQUEST);
         }
-        // Use transaction to ensure atomicity
-        const result = await connect_1.default.$transaction(async (prisma) => {
-            // Debit wallet
-            await prisma.wallet.update({
+        return connect_1.default.$transaction(async (tx) => {
+            const updated = await tx.wallet.update({
                 where: { id: wallet.id },
-                data: {
-                    balance: wallet.balance - amount,
-                    updatedAt: new Date(),
-                },
+                data: { balance: wallet.balance - amount },
             });
-            // Create transaction record
-            const transaction = await prisma.transaction.create({
+            return tx.transaction.create({
                 data: {
                     walletId: wallet.id,
-                    amount: amount,
+                    amount,
                     status: client_1.Status.COMPLETED,
                     type: transactionType || client_1.TransactionType.WITHDRAWAL,
-                    reference: `${userId}-${Date.now()}`, // More unique reference
+                    reference: `${userId}-${Date.now()}-${crypto_1.default.randomBytes(4).toString("hex")}`,
                     description: reason,
                     balanceBefore: wallet.balance,
-                    balanceAfter: wallet.balance - amount,
+                    balanceAfter: updated.balance,
                     fee: 0,
                     userId: wallet.userId,
-                    metadata: {
-                        orderId: sendTo || null,
-                        reason: reason,
-                    },
+                    metadata: { orderId: sendTo ?? null, reason },
                 },
             });
-            return transaction;
         });
-        return result;
     }
     async creditWallet(userId, amount, reason, orderId) {
         if (amount <= 0) {
-            throw new Error("Amount must be greater than 0");
+            throw new app_exception_1.default("Amount must be greater than 0", http_status_1.default.BAD_REQUEST);
         }
         const wallet = await this.getWallet(userId);
-        if (!wallet) {
-            throw new Error("Wallet not found");
-        }
-        // Use transaction to ensure atomicity
-        const result = await connect_1.default.$transaction(async (prisma) => {
-            // Credit wallet
-            const updatedWallet = await prisma.wallet.update({
+        return connect_1.default.$transaction(async (tx) => {
+            const updatedWallet = await tx.wallet.update({
                 where: { id: wallet.id },
-                data: {
-                    balance: wallet.balance + amount,
-                    updatedAt: new Date(),
-                },
+                data: { balance: wallet.balance + amount },
             });
-            // Create transaction record
-            const transaction = await prisma.transaction.create({
+            const transaction = await tx.transaction.create({
                 data: {
                     walletId: wallet.id,
-                    amount: amount,
+                    amount,
                     status: client_1.Status.COMPLETED,
                     type: client_1.TransactionType.PAYMENT,
-                    reference: `${userId}-${Date.now()}`,
+                    reference: `${userId}-${Date.now()}-${crypto_1.default.randomBytes(4).toString("hex")}`,
                     description: reason,
                     balanceBefore: wallet.balance,
-                    balanceAfter: wallet.balance + amount,
+                    balanceAfter: updatedWallet.balance,
                     fee: 0,
                     userId: wallet.userId,
-                    metadata: {
-                        orderId: orderId || null,
-                        reason: reason,
-                    },
+                    metadata: { orderId: orderId ?? null, reason },
                 },
             });
             return { transaction, wallet: updatedWallet };
         });
-        return result;
     }
 }
 exports.WalletService = WalletService;
