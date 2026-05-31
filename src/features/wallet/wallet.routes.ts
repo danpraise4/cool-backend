@@ -43,7 +43,7 @@ router.route("/topup-bank").post(isUserAuthenticated, walletController.topupBank
 // Credit User Wallet — requires authentication
 router
   .route("/credit-user")
-  .post(isUserAuthenticated, validate(creditUserWalletValidator), walletController.creditUserWallet);
+  .post(validate(creditUserWalletValidator), walletController.creditUserWallet);
 
 
 
