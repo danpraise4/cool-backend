@@ -440,6 +440,8 @@ export class WalletService {
 
     const result = await this.creditWallet(body.user, body.amount, "Wallet credit");
 
+    console.log("We got done ok")
+
     return {
       transactionId: result.transaction.id,
       amount: body.amount,
