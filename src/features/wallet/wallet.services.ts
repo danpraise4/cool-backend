@@ -443,9 +443,8 @@ export class WalletService {
       throw new AppException("Transaction already processed", httpStatus.CONFLICT);
     }
 
-    const result = await this.creditWallet(body.user, body.amount, "Wallet credit");
+    const result = await this.creditWallet(body.user, body.amount, "Wallet credit", null, { idempotent: body.idempotent });
 
-    console.log("We got done ok")
 
     return {
       transactionId: result.transaction.id,
@@ -510,7 +509,8 @@ export class WalletService {
     userId: string,
     amount: number,
     reason: string,
-    orderId?: string
+    orderId?: string,
+    options?: { idempotent?: string }
   ) {
     if (amount <= 0) {
       throw new AppException("Amount must be greater than 0", httpStatus.BAD_REQUEST);
@@ -530,7 +530,7 @@ export class WalletService {
           amount,
           status: Status.COMPLETED,
           type: TransactionType.PAYMENT,
-          reference: `${userId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+          reference: options?.idempotent ?? `${userId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
           description: reason,
           balanceBefore: wallet.balance,
           balanceAfter: updatedWallet.balance,
