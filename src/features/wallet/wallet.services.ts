@@ -423,6 +423,11 @@ export class WalletService {
     idempotent: string;
   }) {
     const userData = await prisma.user.findUnique({ where: { id: body.user } });
+    const isExistingTransaction = await prisma.transaction.findFirst({ where: { reference: body.idempotent } });
+
+    if (isExistingTransaction) {
+      throw new AppException("Transaction already processed", httpStatus.CONFLICT);
+    }
 
     if (!userData) {
       throw new AppException("User not found", httpStatus.NOT_FOUND);
