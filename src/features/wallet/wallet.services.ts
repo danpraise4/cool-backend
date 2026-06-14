@@ -16,6 +16,18 @@ import {
   emailNotificationService,
   EmailNotificationType,
 } from "../../shared/services/email/email-notification.service";
+import {
+  assertWithdrawalAmountInRange,
+  bankCodeExists,
+  normalizeBankCode,
+  normalizeBankList,
+  NormalizedBank,
+  parseWithdrawalAmount,
+} from "./wallet.withdraw.utils";
+import { IFlutterwaveBaseResponse } from "../../shared/services/flutterwave/flutterwave.interface";
+
+const NGN_BANKS_CACHE_TTL_MS = 60 * 60 * 1000;
+let ngnBanksCache: { fetchedAt: number; banks: NormalizedBank[] } | null = null;
 
 export class WalletService {
   private readonly flutterwaveClient: Flutterwave;
@@ -58,10 +70,22 @@ export class WalletService {
       data: Record<string, unknown>;
     };
 
-    if (event !== "charge.completed") {
-      return { message: "Hook received" };
+    if (event === "charge.completed") {
+      return this.handleChargeCompleted(data);
     }
 
+    if (event === "transfer.completed") {
+      return this.handleTransferCompleted(data);
+    }
+
+    if (event === "transfer.failed") {
+      return this.handleTransferFailed(data);
+    }
+
+    return { message: "Hook received" };
+  }
+
+  private async handleChargeCompleted(data: Record<string, unknown>) {
     const { tx_ref, flw_ref, amount } = data as {
       tx_ref: string;
       flw_ref: string;
@@ -121,6 +145,157 @@ export class WalletService {
     });
 
     return transaction;
+  }
+
+  private async handleTransferCompleted(data: Record<string, unknown>) {
+    const reference =
+      (data.reference as string | undefined) ||
+      (data.tx_ref as string | undefined);
+
+    if (!reference) {
+      logger.warn({ data }, "transfer.completed webhook missing reference");
+      return { message: "No reference" };
+    }
+
+    const transaction = await prisma.transaction.findFirst({ where: { reference } });
+    if (!transaction) {
+      logger.warn({ reference }, "transfer.completed: transaction not found");
+      return { message: "Transaction not found" };
+    }
+
+    if (transaction.status === Status.COMPLETED) {
+      return transaction;
+    }
+
+    return prisma.transaction.update({
+      where: { id: transaction.id },
+      data: {
+        status: Status.COMPLETED,
+        metadata: {
+          ...(transaction.metadata as object),
+          flutterwaveTransfer: data,
+        } as object,
+      },
+    });
+  }
+
+  private async handleTransferFailed(data: Record<string, unknown>) {
+    const reference =
+      (data.reference as string | undefined) ||
+      (data.tx_ref as string | undefined);
+
+    if (!reference) {
+      logger.warn({ data }, "transfer.failed webhook missing reference");
+      return { message: "No reference" };
+    }
+
+    const transaction = await prisma.transaction.findFirst({
+      where: { reference },
+      include: { wallet: true },
+    });
+
+    if (!transaction) {
+      logger.warn({ reference }, "transfer.failed: transaction not found");
+      return { message: "Transaction not found" };
+    }
+
+    if (transaction.status === Status.REJECTED) {
+      return transaction;
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const wallet = await tx.wallet.findUnique({ where: { id: transaction.walletId } });
+      if (!wallet) {
+        throw new AppException("Wallet not found", httpStatus.NOT_FOUND);
+      }
+
+      const refundedBalance = wallet.balance + transaction.amount;
+
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: refundedBalance },
+      });
+
+      return tx.transaction.update({
+        where: { id: transaction.id },
+        data: {
+          status: Status.REJECTED,
+          description: `${transaction.description} (failed — refunded)`,
+          metadata: {
+            ...(transaction.metadata as object),
+            flutterwaveTransferFailure: data,
+          } as object,
+        },
+      });
+    });
+  }
+
+  private mapFlutterwaveError(err: unknown): AppException {
+    const message =
+      err instanceof Error ? err.message : "Payment provider request failed";
+    return new AppException(message, httpStatus.BAD_REQUEST);
+  }
+
+  private async fetchNigerianBanks(forceRefresh = false): Promise<NormalizedBank[]> {
+    const now = Date.now();
+    if (
+      !forceRefresh &&
+      ngnBanksCache &&
+      now - ngnBanksCache.fetchedAt < NGN_BANKS_CACHE_TTL_MS
+    ) {
+      return ngnBanksCache.banks;
+    }
+
+    const response = await this.flutterwaveClient.getBanks("NG");
+    const banks = normalizeBankList(response.data);
+    ngnBanksCache = { fetchedAt: now, banks };
+    return banks;
+  }
+
+  private async assertNgnWallet(userId: string) {
+    const wallet = await prisma.wallet.findUnique({ where: { userId } });
+    if (!wallet) {
+      throw new AppException("Wallet not found", httpStatus.NOT_FOUND);
+    }
+    if (wallet.currency !== Currency.NGN) {
+      throw new AppException(
+        "This action is only available for NGN wallets",
+        httpStatus.BAD_REQUEST
+      );
+    }
+    return wallet;
+  }
+
+  private async resolveNigerianAccount(account_number: string, account_bank: string) {
+    const bankCode = normalizeBankCode(account_bank);
+    const banks = await this.fetchNigerianBanks();
+
+    if (!bankCodeExists(banks, bankCode)) {
+      throw new AppException("Invalid bank code", httpStatus.BAD_REQUEST);
+    }
+
+    let response: IFlutterwaveBaseResponse<{ account_number: string; account_name: string }>;
+    try {
+      response = await this.flutterwaveClient.getBankAccountDetails({
+        account_number,
+        account_bank: bankCode,
+      });
+    } catch (err) {
+      throw this.mapFlutterwaveError(err);
+    }
+
+    if (response.status !== "success" || !response.data?.account_name) {
+      throw new AppException(
+        response.message || "Could not resolve bank account",
+        httpStatus.BAD_REQUEST
+      );
+    }
+
+    return {
+      account_number: response.data.account_number ?? account_number,
+      account_name: response.data.account_name,
+      account_bank: bankCode,
+    };
   }
 
   private async _setupAccount(userId: string): Promise<Wallet> {
@@ -195,11 +370,15 @@ export class WalletService {
     return this.flutterwaveClient.createCardCharge(payload);
   }
 
-  public async getBankAccountDetails(body: {
-    account_number: string;
-    account_bank: string;
-  }) {
-    return this.flutterwaveClient.getBankAccountDetails(body);
+  public async getBankAccountDetails(
+    userId: string,
+    body: {
+      account_number: string;
+      account_bank: string;
+    }
+  ) {
+    await this.assertNgnWallet(userId);
+    return this.resolveNigerianAccount(body.account_number, body.account_bank);
   }
 
   public async resolveUK(body: { number: string; name: string; code: string }) {
@@ -305,41 +484,75 @@ export class WalletService {
     amount,
     account_number,
     account_bank,
+    idempotencyKey,
   }: {
     user: User;
-    amount: number;
+    amount: number | string;
     account_number: string;
     account_bank: string;
+    idempotencyKey?: string;
   }) {
-    const wallet = await prisma.wallet.findUnique({ where: { userId: user.id } });
+    const wallet = await this.assertNgnWallet(user.id);
+    const bankCode = normalizeBankCode(account_bank);
 
-    if (!wallet) {
-      throw new AppException("Wallet not found", httpStatus.NOT_FOUND);
-    }
-
-    if (wallet.currency !== Currency.NGN) {
+    let numericAmount: number;
+    try {
+      numericAmount = parseWithdrawalAmount(amount);
+      assertWithdrawalAmountInRange(numericAmount);
+    } catch (err) {
       throw new AppException(
-        "Transfers to Nigerian banks are only available for NGN wallets",
+        err instanceof Error ? err.message : "Invalid withdrawal amount",
         httpStatus.BAD_REQUEST
       );
     }
-
-    const numericAmount = Number(amount);
 
     if (wallet.balance < numericAmount) {
       throw new AppException("Insufficient funds", httpStatus.BAD_REQUEST);
     }
 
-    const ref = `ng-withdraw-${user.id}-${Date.now()}`;
+    const ref = idempotencyKey || `ng-withdraw-${user.id}-${Date.now()}`;
 
-    // Call Flutterwave FIRST — debit only if provider accepts the transfer
-    const response = await this.flutterwaveClient.transferToBank({
-      amount: numericAmount,
-      account_number,
-      account_bank,
-      currency: "NGN",
-      tx_ref: ref,
+    const existingTransaction = await prisma.transaction.findFirst({
+      where: { reference: ref, userId: user.id },
     });
+    if (existingTransaction) {
+      return {
+        reference: existingTransaction.reference,
+        transaction: existingTransaction,
+        duplicate: true,
+      };
+    }
+
+    const resolved = await this.resolveNigerianAccount(account_number, bankCode);
+
+    let response: IFlutterwaveBaseResponse<Record<string, unknown>>;
+    try {
+      response = await this.flutterwaveClient.transferToBank({
+        account_bank: bankCode,
+        account_number: resolved.account_number,
+        amount: numericAmount,
+        currency: "NGN",
+        narration: "Recycool wallet withdrawal",
+        reference: ref,
+        debit_currency: "NGN",
+        beneficiary_name: resolved.account_name,
+      });
+    } catch (err) {
+      throw this.mapFlutterwaveError(err);
+    }
+
+    if (response.status !== "success") {
+      throw new AppException(
+        response.message || "Transfer could not be initiated",
+        httpStatus.BAD_REQUEST
+      );
+    }
+
+    const flwTransferId = response.data?.id;
+    logger.info(
+      { reference: ref, flwTransferId, userId: user.id, amount: numericAmount },
+      "NGN withdrawal transfer queued"
+    );
 
     const balanceBefore = wallet.balance;
     const balanceAfter = wallet.balance - numericAmount;
@@ -354,7 +567,7 @@ export class WalletService {
         data: {
           walletId: wallet.id,
           amount: numericAmount,
-          status: Status.COMPLETED,
+          status: Status.PENDING,
           type: TransactionType.WITHDRAWAL,
           reference: ref,
           description: "Withdrawal to Nigerian bank account",
@@ -362,7 +575,12 @@ export class WalletService {
           balanceAfter,
           fee: 0,
           userId: wallet.userId,
-          metadata: { flutterwave: response as object },
+          metadata: {
+            flutterwave: (response.data ?? {}) as object,
+            account_name: resolved.account_name,
+            account_bank: bankCode,
+            account_number: resolved.account_number,
+          },
         },
       });
     });
@@ -373,7 +591,11 @@ export class WalletService {
       reference: ref,
     });
 
-    return { transfer: response, transaction };
+    return {
+      reference: ref,
+      transfer: response.data,
+      transaction,
+    };
   }
 
   public async createBankCharge({
@@ -413,8 +635,15 @@ export class WalletService {
   }
 
   public async getBanksList(user: User) {
+    const wallet = await this.getWallet(user.id);
+
+    if (wallet.currency === Currency.NGN) {
+      return this.fetchNigerianBanks();
+    }
+
     const country = flutterwaveBankCountryCode(user);
-    return this.flutterwaveClient.getBanks(country);
+    const response = await this.flutterwaveClient.getBanks(country);
+    return normalizeBankList(response.data);
   }
 
   public async creditUserWallet(body: {

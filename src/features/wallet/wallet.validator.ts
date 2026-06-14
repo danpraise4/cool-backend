@@ -50,6 +50,54 @@ export const creditUserWalletValidator = {
   }),
 };
 
+export const resolveBankAccountValidator = {
+  body: Joi.object().keys({
+    account_number: Joi.string()
+      .pattern(/^\d{10}$/)
+      .required()
+      .messages({
+        "any.required": "Account number is required",
+        "string.pattern.base": "Account number must be exactly 10 digits",
+      }),
+    account_bank: Joi.string()
+      .pattern(/^\d{1,6}$/)
+      .required()
+      .messages({
+        "any.required": "Bank code is required",
+        "string.pattern.base": "Bank code must be a numeric Flutterwave bank code",
+      }),
+  }),
+};
+
+export const transferToBankValidator = {
+  body: Joi.object().keys({
+    account_number: Joi.string()
+      .pattern(/^\d{10}$/)
+      .required()
+      .messages({
+        "any.required": "Account number is required",
+        "string.pattern.base": "Account number must be exactly 10 digits",
+      }),
+    account_bank: Joi.string()
+      .pattern(/^\d{1,6}$/)
+      .required()
+      .messages({
+        "any.required": "Bank code is required",
+        "string.pattern.base": "Bank code must be a numeric Flutterwave bank code",
+      }),
+    amount: Joi.alternatives()
+      .try(
+        Joi.number().positive(),
+        Joi.string().pattern(/^\d+(\.\d{1,2})?$/)
+      )
+      .required()
+      .messages({
+        "any.required": "Withdrawal amount is required",
+        "alternatives.match": "Amount must be a positive number",
+      }),
+  }),
+};
+
 export const verifyOtpValidator = {
   body: Joi.object().keys({
     phone: Joi.string().required().messages({

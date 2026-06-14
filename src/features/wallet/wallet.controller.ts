@@ -97,16 +97,18 @@ export default class WalletController {
     next: NextFunction
   ) => {
     try {
-      const bankAccount = await this.walletService.getBankAccountDetails({
+      const bankAccount = await this.walletService.getBankAccountDetails(req.user.id, {
         account_number: req.body.account_number,
         account_bank: req.body.account_bank,
       });
-      sendSuccess(res, httpStatus.OK, {
-        message: "Bank account details fetched",
+      return res.status(httpStatus.OK).json({
+        success: true,
+        status: "success",
+        message: "Account resolved",
         data: bankAccount,
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   };
 
@@ -150,18 +152,25 @@ export default class WalletController {
   ) => {
     try {
       const { amount, account_number, account_bank } = req.body;
-      const transaction = await this.walletService.transferToBank({
+      const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+      const result = await this.walletService.transferToBank({
         user: req.user,
         amount,
         account_number,
         account_bank,
+        idempotencyKey,
       });
-      sendSuccess(res, httpStatus.OK, {
-        message: "Transfer initiated successfully",
-        data: transaction,
+      return res.status(httpStatus.OK).json({
+        success: true,
+        status: "success",
+        message: result.duplicate ? "Transfer already initiated" : "Transfer initiated",
+        data: {
+          reference: result.reference,
+          transaction: result.transaction,
+        },
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   };
 
@@ -173,12 +182,14 @@ export default class WalletController {
     try {
       const user: User = req.user;
       const banks = await this.walletService.getBanksList(user);
-      sendSuccess(res, httpStatus.OK, {
+      return res.status(httpStatus.OK).json({
+        success: true,
+        status: "success",
         message: "Banks fetched successfully",
         data: banks,
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   };
 

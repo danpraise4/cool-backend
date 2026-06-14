@@ -14,7 +14,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "test:email": "npx ts-node scripts/test-email.ts"
+    "test:email": "npx ts-node scripts/test-email.ts",
+    "test:wallet": "NODE_OPTIONS='--require ts-node/register/transpile-only' node --test src/features/wallet/wallet.withdraw.utils.test.ts"
   },
   "keywords": [],
   "author": "",

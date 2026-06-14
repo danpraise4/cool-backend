@@ -2,7 +2,8 @@ import { Router } from "express";
 import { walletController } from "../../infastructure/https/controller/controller.module";
 import { isUserAuthenticated } from "../../infastructure/https/middlewares/auth.user.middleware";
 import validate from "../../infastructure/https/validation/app.validate";
-import { creditUserWalletValidator } from "./wallet.validator";
+import { creditUserWalletValidator, resolveBankAccountValidator, transferToBankValidator } from "./wallet.validator";
+import { bankAccountResolveLimiter } from "./wallet.middleware";
 
 const router = Router();
 
@@ -24,11 +25,24 @@ router.route("/create-card-charge-url").post(isUserAuthenticated, walletControll
 // Get Banks List
 router.route("/banks").get(isUserAuthenticated, walletController.getBanksList);
 
-// Get Bank Account Details
-router.route("/bank-account").post(isUserAuthenticated, walletController.getBankAccountDetails);
+// Get Bank Account Details (Flutterwave resolve)
+router
+  .route("/bank-account")
+  .post(
+    isUserAuthenticated,
+    bankAccountResolveLimiter,
+    validate(resolveBankAccountValidator),
+    walletController.getBankAccountDetails
+  );
 
-// Transfer to Bank
-router.route("/transfer-to-bank").post(isUserAuthenticated, walletController.transferToBank);
+// Transfer to Bank (NGN)
+router
+  .route("/transfer-to-bank")
+  .post(
+    isUserAuthenticated,
+    validate(transferToBankValidator),
+    walletController.transferToBank
+  );
 
 // Transfer to Bank UK User
 router.route("/transfer-to-bank-uk-user").post(isUserAuthenticated, walletController.transferToBankUKUser);
