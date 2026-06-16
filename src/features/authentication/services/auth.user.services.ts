@@ -14,6 +14,7 @@ import {
   emailNotificationService,
   EmailNotificationType,
 } from "../../../shared/services/email/email-notification.service";
+import { notificationService } from "../../../shared/services/notification/notification.service";
 
 export const { GOOGLE } = config;
 
@@ -111,6 +112,13 @@ export class AuthUserService {
       firstName: newUser.firstName,
     });
 
+    void notificationService.createAndSend(newUser.id, {
+      title: "Welcome to Recycool",
+      body: "Your account has been created successfully.",
+      link: "/home",
+      data: { type: "REGISTRATION" },
+    });
+
     return { user: newUser, token };
   }
 
@@ -179,6 +187,13 @@ export class AuthUserService {
       firstName: user.firstName,
     });
 
+    void notificationService.createAndSend(user.id, {
+      title: "New sign-in",
+      body: "A new sign-in to your account was detected.",
+      link: "/home",
+      data: { type: "LOGIN" },
+    });
+
     return { user };
   }
 
@@ -239,6 +254,13 @@ export class AuthUserService {
 
     emailNotificationService.notifyUser(user.id, EmailNotificationType.PASSWORD_CHANGED, {
       firstName: updated.firstName,
+    });
+
+    void notificationService.createAndSend(user.id, {
+      title: "Password updated",
+      body: "Your account password was changed.",
+      link: "/settings",
+      data: { type: "PASSWORD_CHANGED" },
     });
 
     return updated;

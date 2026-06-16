@@ -14,6 +14,8 @@ const app_exception_1 = __importDefault(require("../../../infastructure/https/ex
 const http_status_1 = __importDefault(require("http-status"));
 const region_1 = require("../../../shared/config/region");
 const email_notification_service_1 = require("../../../shared/services/email/email-notification.service");
+const notification_service_1 = require("../../../shared/services/notification/notification.service");
+const market_order_utils_1 = require("../market.order.utils");
 class MarketUserService {
     materialService;
     walletService;
@@ -508,6 +510,16 @@ class MarketUserService {
             currency: product.currency,
             reference: order.reference,
         });
+        void notification_service_1.notificationService.createAndSend(userId, {
+            title: "Order placed",
+            body: `Your order for ${product.title} was placed successfully.`,
+            link: "/orders",
+            data: {
+                type: "ORDER_PLACED",
+                orderId: order.id,
+                reference: order.reference,
+            },
+        });
         const buyer = await connect_1.default.user.findUnique({
             where: { id: userId },
             select: { firstName: true, lastName: true },
@@ -518,6 +530,16 @@ class MarketUserService {
             currency: product.currency,
             reference: order.reference,
             buyerName: buyer ? `${buyer.firstName} ${buyer.lastName}`.trim() : "A buyer",
+        });
+        void notification_service_1.notificationService.createAndSend(product.userId, {
+            title: "New order received",
+            body: `${buyer ? `${buyer.firstName} ${buyer.lastName}`.trim() : "A buyer"} placed an order for ${product.title}.`,
+            link: "/orders",
+            data: {
+                type: "ORDER_RECEIVED",
+                orderId: order.id,
+                reference: order.reference,
+            },
         });
         return order;
     };
@@ -558,6 +580,16 @@ class MarketUserService {
             currency: order.product.currency,
             buyerName: `${order.user.firstName} ${order.user.lastName}`.trim(),
         });
+        void notification_service_1.notificationService.createAndSend(order.product.createdBy.id, {
+            title: "Order confirmed",
+            body: `${order.user.firstName} ${order.user.lastName} confirmed the order for ${order.product.title}.`,
+            link: "/orders",
+            data: {
+                type: "ORDER_CONFIRMED",
+                orderId: updatedOrder.id,
+                reference: order.reference,
+            },
+        });
         return updatedOrder;
     };
     async refundPendingOrders(productId, productPrice) {
@@ -572,8 +604,39 @@ class MarketUserService {
             });
         }));
     }
+    async resolveMaterialById(materialId) {
+        try {
+            const result = await this.materialService.getMaterialsById(materialId);
+            if (result?.payload) {
+                return (0, market_order_utils_1.mapAdminMaterialPayload)(result.payload);
+            }
+        }
+        catch {
+            // Fall through to local DB / ID fallback.
+        }
+        try {
+            const local = await connect_1.default.material.findUnique({ where: { id: materialId } });
+            if (local) {
+                return {
+                    id: local.id,
+                    title: local.category,
+                    category: local.category,
+                    icon: local.icon,
+                };
+            }
+        }
+        catch {
+            // Fall through to ID fallback in enrichOrderProduct.
+        }
+        return null;
+    }
+    async resolveMaterialsByIds(materialIds) {
+        const uniqueIds = [...new Set(materialIds.filter(Boolean))];
+        const entries = await Promise.all(uniqueIds.map(async (id) => [id, await this.resolveMaterialById(id)]));
+        return new Map(entries);
+    }
     async getOrders(userId) {
-        return connect_1.default.order.findMany({
+        const orders = await connect_1.default.order.findMany({
             where: { user: { id: userId } },
             include: {
                 product: {
@@ -595,6 +658,16 @@ class MarketUserService {
                     },
                 },
             },
+            orderBy: { createdAt: "desc" },
+        });
+        const materialMap = await this.resolveMaterialsByIds(orders.map((order) => order.product?.material).filter((id) => Boolean(id)));
+        return orders.map((order) => {
+            (0, market_order_utils_1.assertOrderProductPresent)(order.product, order.id);
+            const resolvedMaterial = materialMap.get(order.product.material) ?? null;
+            return {
+                ...order,
+                product: (0, market_order_utils_1.enrichOrderProduct)(order.product, resolvedMaterial),
+            };
         });
     }
 }

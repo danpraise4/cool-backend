@@ -20,6 +20,13 @@ import {
   emailNotificationService,
   EmailNotificationType,
 } from "../../../shared/services/email/email-notification.service";
+import { notificationService } from "../../../shared/services/notification/notification.service";
+import {
+  assertOrderProductPresent,
+  enrichOrderProduct,
+  mapAdminMaterialPayload,
+  ResolvedMaterial,
+} from "../market.order.utils";
 
 class MarketUserService {
   private readonly materialService: MaterialsService;
@@ -653,6 +660,17 @@ class MarketUserService {
       reference: order.reference,
     });
 
+    void notificationService.createAndSend(userId, {
+      title: "Order placed",
+      body: `Your order for ${product.title} was placed successfully.`,
+      link: "/orders",
+      data: {
+        type: "ORDER_PLACED",
+        orderId: order.id,
+        reference: order.reference,
+      },
+    });
+
     const buyer = await prisma.user.findUnique({
       where: { id: userId },
       select: { firstName: true, lastName: true },
@@ -664,6 +682,17 @@ class MarketUserService {
       currency: product.currency,
       reference: order.reference,
       buyerName: buyer ? `${buyer.firstName} ${buyer.lastName}`.trim() : "A buyer",
+    });
+
+    void notificationService.createAndSend(product.userId, {
+      title: "New order received",
+      body: `${buyer ? `${buyer.firstName} ${buyer.lastName}`.trim() : "A buyer"} placed an order for ${product.title}.`,
+      link: "/orders",
+      data: {
+        type: "ORDER_RECEIVED",
+        orderId: order.id,
+        reference: order.reference,
+      },
     });
 
     return order;
@@ -727,6 +756,17 @@ class MarketUserService {
       }
     );
 
+    void notificationService.createAndSend(order.product.createdBy.id, {
+      title: "Order confirmed",
+      body: `${order.user.firstName} ${order.user.lastName} confirmed the order for ${order.product.title}.`,
+      link: "/orders",
+      data: {
+        type: "ORDER_CONFIRMED",
+        orderId: updatedOrder.id,
+        reference: order.reference,
+      },
+    });
+
     return updatedOrder;
   };
 
@@ -754,8 +794,43 @@ class MarketUserService {
     );
   }
 
+  private async resolveMaterialById(materialId: string): Promise<ResolvedMaterial | null> {
+    try {
+      const result = await this.materialService.getMaterialsById(materialId);
+      if (result?.payload) {
+        return mapAdminMaterialPayload(result.payload);
+      }
+    } catch {
+      // Fall through to local DB / ID fallback.
+    }
+
+    try {
+      const local = await prisma.material.findUnique({ where: { id: materialId } });
+      if (local) {
+        return {
+          id: local.id,
+          title: local.category,
+          category: local.category,
+          icon: local.icon,
+        };
+      }
+    } catch {
+      // Fall through to ID fallback in enrichOrderProduct.
+    }
+
+    return null;
+  }
+
+  private async resolveMaterialsByIds(materialIds: string[]): Promise<Map<string, ResolvedMaterial | null>> {
+    const uniqueIds = [...new Set(materialIds.filter(Boolean))];
+    const entries = await Promise.all(
+      uniqueIds.map(async (id) => [id, await this.resolveMaterialById(id)] as const)
+    );
+    return new Map(entries);
+  }
+
   async getOrders(userId: string) {
-    return prisma.order.findMany({
+    const orders = await prisma.order.findMany({
       where: { user: { id: userId } },
       include: {
         product: {
@@ -777,6 +852,21 @@ class MarketUserService {
           },
         },
       },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const materialMap = await this.resolveMaterialsByIds(
+      orders.map((order) => order.product?.material).filter((id): id is string => Boolean(id))
+    );
+
+    return orders.map((order) => {
+      assertOrderProductPresent(order.product, order.id);
+      const resolvedMaterial = materialMap.get(order.product.material) ?? null;
+
+      return {
+        ...order,
+        product: enrichOrderProduct(order.product, resolvedMaterial),
+      };
     });
   }
 }

@@ -16,6 +16,7 @@ const auth_utils_1 = require("../auth.utils");
 const app_exception_1 = __importDefault(require("../../../infastructure/https/exception/app.exception"));
 const http_status_1 = __importDefault(require("http-status"));
 const email_notification_service_1 = require("../../../shared/services/email/email-notification.service");
+const notification_service_1 = require("../../../shared/services/notification/notification.service");
 exports.GOOGLE = app_config_1.default.GOOGLE;
 class AuthUserService {
     otpService = new otp_service_1.OtpService();
@@ -75,6 +76,12 @@ class AuthUserService {
         email_notification_service_1.emailNotificationService.notifyUser(newUser.id, email_notification_service_1.EmailNotificationType.REGISTRATION, {
             firstName: newUser.firstName,
         });
+        void notification_service_1.notificationService.createAndSend(newUser.id, {
+            title: "Welcome to Recycool",
+            body: "Your account has been created successfully.",
+            link: "/home",
+            data: { type: "REGISTRATION" },
+        });
         return { user: newUser, token };
     }
     async checkUser(identifier) {
@@ -121,6 +128,12 @@ class AuthUserService {
         email_notification_service_1.emailNotificationService.notifyUser(user.id, email_notification_service_1.EmailNotificationType.LOGIN, {
             firstName: user.firstName,
         });
+        void notification_service_1.notificationService.createAndSend(user.id, {
+            title: "New sign-in",
+            body: "A new sign-in to your account was detected.",
+            link: "/home",
+            data: { type: "LOGIN" },
+        });
         return { user };
     }
     async generateToken(id, name) {
@@ -152,6 +165,12 @@ class AuthUserService {
         });
         email_notification_service_1.emailNotificationService.notifyUser(user.id, email_notification_service_1.EmailNotificationType.PASSWORD_CHANGED, {
             firstName: updated.firstName,
+        });
+        void notification_service_1.notificationService.createAndSend(user.id, {
+            title: "Password updated",
+            body: "Your account password was changed.",
+            link: "/settings",
+            data: { type: "PASSWORD_CHANGED" },
         });
         return updated;
     }

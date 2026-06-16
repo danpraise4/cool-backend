@@ -11,6 +11,7 @@ import {
   emailNotificationService,
   EmailNotificationType,
 } from "../../shared/services/email/email-notification.service";
+import { notificationService } from "../../shared/services/notification/notification.service";
 
 export class UserService {
   AdminClient: AdminService;
@@ -120,6 +121,12 @@ export class UserService {
 
     emailNotificationService.notifyUser(userId, EmailNotificationType.ACCOUNT_DELETED, {
       firstName: user.firstName,
+    });
+
+    void notificationService.createAndSend(userId, {
+      title: "Account deleted",
+      body: "Your account has been deleted. We're sorry to see you go.",
+      data: { type: "ACCOUNT_DELETED" },
     });
 
     await prismaClient.user.update({

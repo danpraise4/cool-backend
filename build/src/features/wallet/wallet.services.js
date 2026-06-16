@@ -17,6 +17,7 @@ const logger_1 = __importDefault(require("../../shared/services/logger"));
 const app_exception_1 = __importDefault(require("../../infastructure/https/exception/app.exception"));
 const http_status_1 = __importDefault(require("http-status"));
 const email_notification_service_1 = require("../../shared/services/email/email-notification.service");
+const notification_service_1 = require("../../shared/services/notification/notification.service");
 const wallet_withdraw_utils_1 = require("./wallet.withdraw.utils");
 const NGN_BANKS_CACHE_TTL_MS = 60 * 60 * 1000;
 let ngnBanksCache = null;
@@ -105,6 +106,15 @@ class WalletService {
             amount,
             currency: account.currency,
             reference: flw_ref,
+        });
+        void notification_service_1.notificationService.createAndSend(account.userId, {
+            title: "Wallet top-up successful",
+            body: `Your wallet was credited with ${amount} ${account.currency}.`,
+            link: "/wallet",
+            data: {
+                type: "WALLET_TOPUP",
+                reference: flw_ref,
+            },
         });
         return transaction;
     }
@@ -352,6 +362,15 @@ class WalletService {
             amount: numericAmount,
             currency: wallet.currency,
             reference: ref,
+        });
+        void notification_service_1.notificationService.createAndSend(wallet.userId, {
+            title: "Withdrawal initiated",
+            body: `Your withdrawal of ${numericAmount} ${wallet.currency} has been initiated.`,
+            link: "/wallet",
+            data: {
+                type: "WALLET_WITHDRAWAL",
+                reference: ref,
+            },
         });
         return { transfer: response, transaction };
     }

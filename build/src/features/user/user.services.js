@@ -12,6 +12,7 @@ const adminservice_client_1 = __importDefault(require("../../shared/services/adm
 const adminservice_1 = __importDefault(require("../../shared/services/admin/adminservice"));
 const helper_1 = require("../../shared/helper/helper");
 const email_notification_service_1 = require("../../shared/services/email/email-notification.service");
+const notification_service_1 = require("../../shared/services/notification/notification.service");
 class UserService {
     AdminClient;
     constructor() {
@@ -98,6 +99,11 @@ class UserService {
         }
         email_notification_service_1.emailNotificationService.notifyUser(userId, email_notification_service_1.EmailNotificationType.ACCOUNT_DELETED, {
             firstName: user.firstName,
+        });
+        void notification_service_1.notificationService.createAndSend(userId, {
+            title: "Account deleted",
+            body: "Your account has been deleted. We're sorry to see you go.",
+            data: { type: "ACCOUNT_DELETED" },
         });
         await connect_1.default.user.update({
             where: { id: userId },

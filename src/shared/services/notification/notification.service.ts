@@ -52,3 +52,52 @@ export default class PushService {
     return tickets;
   }
 }
+
+type NotificationPayload = {
+  title: string;
+  body: string;
+  image?: string;
+  link?: string;
+  data?: Record<string, string>;
+};
+
+export class NotificationService {
+  /**
+   * Create an in-app notification row and optionally fan out a push notification.
+   * Never throws to callers — errors are logged and swallowed.
+   */
+  async createAndSend(userId: string, payload: NotificationPayload): Promise<void> {
+    try {
+      const user = await prismaClient.user.findUnique({
+        where: { id: userId },
+        include: { settings: true },
+      });
+
+      if (!user) return;
+
+      await prismaClient.notification.create({
+        data: {
+          userId,
+          title: payload.title,
+          body: payload.body,
+          image: payload.image,
+          link: payload.link,
+        },
+      });
+
+      if (user.settings?.isPushNotificationsEnabled === false) {
+        return;
+      }
+
+      await PushService.getInstance().emitNotificationToClient(
+        userId,
+        { title: payload.title, body: payload.body },
+        payload.data
+      );
+    } catch (err) {
+      logger.error({ err, userId, payload }, "notification dispatch failed");
+    }
+  }
+}
+
+export const notificationService = new NotificationService();

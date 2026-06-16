@@ -8,10 +8,12 @@ const connect_1 = __importDefault(require("../../infastructure/database/postgreS
 const helper_1 = require("../../shared/helper/helper");
 const adminservice_client_1 = __importDefault(require("../../shared/services/admin/adminservice.client"));
 const adminservice_1 = __importDefault(require("../../shared/services/admin/adminservice"));
+const client_1 = require("@prisma/client");
 const app_exception_1 = __importDefault(require("../../infastructure/https/exception/app.exception"));
 const http_status_1 = __importDefault(require("http-status"));
 const region_1 = require("../../shared/config/region");
 const email_notification_service_1 = require("../../shared/services/email/email-notification.service");
+const notification_service_1 = require("../../shared/services/notification/notification.service");
 class RecycleService {
     adminClient;
     constructor() {
@@ -80,6 +82,15 @@ class RecycleService {
             facilityName: facility.payload.name,
             materialName: material.payload.category,
             scheduledDate: helper_1.Helper.toDate(dates[0]).toLocaleDateString("en-GB"),
+        });
+        void notification_service_1.notificationService.createAndSend(userId, {
+            title: "Recycle request submitted",
+            body: `Your recycle request to ${facility.payload.name} for ${material.payload.category} was submitted.`,
+            link: "/recycle",
+            data: {
+                type: "RECYCLE_REQUEST_SUBMITTED",
+                scheduleId: schedule.id,
+            },
         });
         return schedule;
     }
@@ -280,7 +291,7 @@ class RecycleService {
     }
     async getCompletedRecycleSchedules(config) {
         const schedules = await connect_1.default.recycleSchedule.findMany({
-            where: { userId: config.userId },
+            where: { userId: config.userId, status: client_1.Status.COMPLETED },
         });
         return Promise.all(schedules.map(async (schedule) => ({
             ...schedule,

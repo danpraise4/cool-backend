@@ -16,6 +16,7 @@ import {
   emailNotificationService,
   EmailNotificationType,
 } from "../../shared/services/email/email-notification.service";
+import { notificationService } from "../../shared/services/notification/notification.service";
 import {
   assertWithdrawalAmountInRange,
   bankCodeExists,
@@ -142,6 +143,16 @@ export class WalletService {
       amount,
       currency: account.currency,
       reference: flw_ref,
+    });
+
+    void notificationService.createAndSend(account.userId, {
+      title: "Wallet top-up successful",
+      body: `Your wallet was credited with ${amount} ${account.currency}.`,
+      link: "/wallet",
+      data: {
+        type: "WALLET_TOPUP",
+        reference: flw_ref,
+      },
     });
 
     return transaction;
@@ -474,6 +485,16 @@ export class WalletService {
       amount: numericAmount,
       currency: wallet.currency,
       reference: ref,
+    });
+
+    void notificationService.createAndSend(wallet.userId, {
+      title: "Withdrawal initiated",
+      body: `Your withdrawal of ${numericAmount} ${wallet.currency} has been initiated.`,
+      link: "/wallet",
+      data: {
+        type: "WALLET_WITHDRAWAL",
+        reference: ref,
+      },
     });
 
     return { transfer: response, transaction };

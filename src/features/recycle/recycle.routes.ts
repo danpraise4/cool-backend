@@ -68,6 +68,10 @@ router
   .get(isUserAuthenticated, recycleController.getCompletedRecycleSchedules);
 
 router
+  .route("/completed")
+  .get(isUserAuthenticated, recycleController.getCompletedRecycleSchedules);
+
+router
   .route("/:id")
   .get(
     isUserAuthenticated,

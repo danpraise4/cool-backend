@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.notificationService = exports.NotificationService = void 0;
 const expo_server_sdk_1 = require("expo-server-sdk");
 const connect_1 = __importDefault(require("../../../infastructure/database/postgreSQL/connect"));
 const logger_1 = __importDefault(require("../logger"));
@@ -45,3 +46,37 @@ class PushService {
     }
 }
 exports.default = PushService;
+class NotificationService {
+    /**
+     * Create an in-app notification row and optionally fan out a push notification.
+     * Never throws to callers — errors are logged and swallowed.
+     */
+    async createAndSend(userId, payload) {
+        try {
+            const user = await connect_1.default.user.findUnique({
+                where: { id: userId },
+                include: { settings: true },
+            });
+            if (!user)
+                return;
+            await connect_1.default.notification.create({
+                data: {
+                    userId,
+                    title: payload.title,
+                    body: payload.body,
+                    image: payload.image,
+                    link: payload.link,
+                },
+            });
+            if (user.settings?.isPushNotificationsEnabled === false) {
+                return;
+            }
+            await PushService.getInstance().emitNotificationToClient(userId, { title: payload.title, body: payload.body }, payload.data);
+        }
+        catch (err) {
+            logger_1.default.error({ err, userId, payload }, "notification dispatch failed");
+        }
+    }
+}
+exports.NotificationService = NotificationService;
+exports.notificationService = new NotificationService();

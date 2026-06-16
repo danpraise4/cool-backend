@@ -3,7 +3,7 @@ import { Helper } from "../../shared/helper/helper";
 import AdminServiceClient from "../../shared/services/admin/adminservice.client";
 import AdminService from "../../shared/services/admin/adminservice";
 import { ICommunityCreateSchedule, IUpdateRecycleSchedule } from "./recycle.intefase";
-import { RecycleChatType, RecycleScheduleStatus, User } from "@prisma/client";
+import { RecycleChatType, RecycleScheduleStatus, Status, User } from "@prisma/client";
 import AppException from "../../infastructure/https/exception/app.exception";
 import httpStatus from "http-status";
 import { getCountryForCity } from "../../shared/config/region";
@@ -11,6 +11,7 @@ import {
   emailNotificationService,
   EmailNotificationType,
 } from "../../shared/services/email/email-notification.service";
+import { notificationService } from "../../shared/services/notification/notification.service";
 
 export class RecycleService {
   private readonly adminClient: AdminService;
@@ -97,6 +98,16 @@ export class RecycleService {
       facilityName: facility.payload.name,
       materialName: material.payload.category,
       scheduledDate: Helper.toDate(dates[0]).toLocaleDateString("en-GB"),
+    });
+
+    void notificationService.createAndSend(userId, {
+      title: "Recycle request submitted",
+      body: `Your recycle request to ${facility.payload.name} for ${material.payload.category} was submitted.`,
+      link: "/recycle",
+      data: {
+        type: "RECYCLE_REQUEST_SUBMITTED",
+        scheduleId: schedule.id,
+      },
     });
 
     return schedule;
@@ -380,7 +391,7 @@ export class RecycleService {
 
   public async getCompletedRecycleSchedules(config: { userId: string }) {
     const schedules = await prismaClient.recycleSchedule.findMany({
-      where: { userId: config.userId },
+      where: { userId: config.userId, status: Status.COMPLETED },
     });
 
     return Promise.all(

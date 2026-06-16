@@ -46,6 +46,9 @@ router
     .route("/completed-schedules")
     .get(auth_user_middleware_1.isUserAuthenticated, controller_module_1.recycleController.getCompletedRecycleSchedules);
 router
+    .route("/completed")
+    .get(auth_user_middleware_1.isUserAuthenticated, controller_module_1.recycleController.getCompletedRecycleSchedules);
+router
     .route("/:id")
     .get(auth_user_middleware_1.isUserAuthenticated, (0, app_validate_1.default)(recycle_validator_1.getRecycleSchedulesSingleValidator), controller_module_1.recycleController.getRecycleSchedulesById);
 router
