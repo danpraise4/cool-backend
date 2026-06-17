@@ -71,7 +71,12 @@ exports.respondToCharityProductRequestValidator = {
         }),
     }),
     body: joi_1.default.object().keys({
-        status: joi_1.default.string().required().messages({
+        status: joi_1.default.string()
+            .valid("ACCEPTED", "APPROVED", "REJECTED")
+            .insensitive()
+            .required()
+            .messages({
+            "any.only": "Status must be ACCEPTED or REJECTED",
             "any.required": "Oops!, you have to specify a status",
         }),
     }),

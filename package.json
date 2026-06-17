@@ -15,9 +15,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "test:email": "npx ts-node scripts/test-email.ts",
-    "test:wallet": "NODE_OPTIONS='--require ts-node/register/transpile-only' node --test src/features/wallet/wallet.withdraw.utils.test.ts",
-    "test:recycle-access": "NODE_ENV=production NODE_OPTIONS='--require ts-node/register/transpile-only' node --test src/features/recycle/recycle.access-control.test.ts",
-    "test:market-orders": "NODE_ENV=production NODE_OPTIONS='--require ts-node/register/transpile-only' node --test src/features/market/market.order.utils.test.ts"
+    "test:wallet": "NODE_OPTIONS='--require ts-node/register/transpile-only' node --test src/features/wallet/wallet.withdraw.utils.test.ts src/features/wallet/wallet.topup.utils.test.ts",
+    "test:recycle-access": "NODE_ENV=production NODE_OPTIONS='--require ts-node/register/transpile-only' node --test src/features/recycle/recycle.public.utils.test.ts",
+    "test:market-orders": "NODE_ENV=production NODE_OPTIONS='--require ts-node/register/transpile-only' node --test src/features/market/market.order.utils.test.ts",
+    "test:market-charity": "NODE_ENV=production NODE_OPTIONS='--require ts-node/register/transpile-only' node --test src/features/market/market.charity.utils.test.ts"
   },
   "keywords": [],
   "author": "",

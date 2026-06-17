@@ -1,7 +1,7 @@
 import { Job, Worker } from "bullmq";
 import { redis } from "../utils/catch";
 import prismaClient from "../../../infastructure/database/postgreSQL/connect";
-import PushService from "../../services/notification/notification.service";
+import { notificationService } from "../../services/notification/notification.service";
 import { ReminderCron } from "../cron/reminder.cron";
 import { STATUS } from "../../config/app.constants";
 import logger from "../../services/logger";
@@ -31,9 +31,6 @@ export const remindersWorker = new Worker(
           return;
         }
 
-        if (!reminder.user.settings?.isPushNotificationsEnabled) return;
-        if (!reminder.user.deviceToken) return;
-
         const scheduleDate = reminder.schedule.dates[0];
         const isDayBefore =
           reminder.remindAt &&
@@ -45,18 +42,15 @@ export const remindersWorker = new Worker(
           ? `Don't forget! You have a recycling appointment tomorrow at ${reminder.schedule.facility}`
           : `Your recycling appointment is today at ${reminder.schedule.facility}`;
 
-        await PushService.getInstance().emitNotificationToClient(reminder.userId, { title, body }, {
-          type: "recycle_reminder",
-          scheduleId: reminder.scheduleId,
-          reminderId: reminder.id,
-        });
-
-        await prismaClient.notification.create({
+        await notificationService.createAndSend(reminder.userId, {
+          title,
+          body,
+          link: `/recycle/schedule/${reminder.scheduleId}`,
+          type: "RECYCLE_REMINDER",
           data: {
-            userId: reminder.userId,
-            title,
-            body,
-            link: `/recycle/schedule/${reminder.scheduleId}`,
+            type: "RECYCLE_REMINDER",
+            scheduleId: reminder.scheduleId,
+            reminderId: reminder.id,
           },
         });
 

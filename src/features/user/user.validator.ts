@@ -25,3 +25,20 @@ export const uploadImageValidator = {
     }),
   }),
 };
+
+export const getNotificationsQueryValidator = {
+  query: Joi.object().keys({
+    page: Joi.number().integer().min(1).optional(),
+    limit: Joi.number().integer().min(1).max(50).optional(),
+    unreadOnly: Joi.string().valid("true", "false").optional(),
+  }),
+};
+
+export const notificationIdParamValidator = {
+  params: Joi.object().keys({
+    id: Joi.string().uuid().required().messages({
+      "any.required": "Notification id is required",
+      "string.guid": "Notification id must be a valid UUID",
+    }),
+  }),
+};

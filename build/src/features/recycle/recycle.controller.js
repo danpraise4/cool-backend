@@ -4,25 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RecycleController = void 0;
-exports.assertSelfScopeOnly = assertSelfScopeOnly;
 const http_status_1 = __importDefault(require("http-status"));
-const app_exception_1 = __importDefault(require("../../infastructure/https/exception/app.exception"));
-const logger_1 = __importDefault(require("../../shared/services/logger"));
-function assertSelfScopeOnly(req, endpoint) {
-    const authUserId = req.user?.id;
-    const requestedUserId = (req.query.userId || req.query.recyclerId);
-    if (!requestedUserId)
-        return;
-    if (requestedUserId === authUserId)
-        return;
-    logger_1.default.warn({
-        authUserId,
-        requestedUserId,
-        endpoint,
-        ip: req.ip,
-    }, "Denied cross-user analytics access attempt");
-    throw new app_exception_1.default("You are not allowed to access this resource", http_status_1.default.FORBIDDEN);
-}
+const recycle_public_utils_1 = require("./recycle.public.utils");
 class RecycleController {
     recycleService;
     constructor(recycleService) {
@@ -169,12 +152,16 @@ class RecycleController {
     getUserRecyclingAnalytics = async (req, res, next) => {
         const { start, end } = req.query;
         try {
-            assertSelfScopeOnly(req, "GET /recycle/analytics");
-            const userAnalytics = await this.recycleService.getUserRecyclingAnalytics(req.user.id, {
+            const targetUserId = await (0, recycle_public_utils_1.resolveRecycleTargetUserId)(req);
+            const userAnalytics = await this.recycleService.getUserRecyclingAnalytics(targetUserId, {
                 start: start ? new Date(start) : undefined,
                 end: end ? new Date(end) : undefined,
             });
-            res.status(http_status_1.default.OK).json({ message: "User recycling analytics fetched successfully", data: userAnalytics });
+            res.status(http_status_1.default.OK).json({
+                status: "success",
+                message: "User recycling analytics fetched successfully",
+                data: userAnalytics,
+            });
         }
         catch (error) {
             next(error);
@@ -182,9 +169,13 @@ class RecycleController {
     };
     getCompletedRecycleSchedules = async (req, res, next) => {
         try {
-            assertSelfScopeOnly(req, "GET /recycle/completed-schedules");
-            const completedRecycleSchedules = await this.recycleService.getCompletedRecycleSchedules({ userId: req.user.id });
-            res.status(http_status_1.default.OK).json({ message: "Completed recycle schedules fetched successfully", status: "success", data: completedRecycleSchedules });
+            const targetUserId = await (0, recycle_public_utils_1.resolveRecycleTargetUserId)(req);
+            const completedRecycleSchedules = await this.recycleService.getCompletedRecycleSchedules({ userId: targetUserId });
+            res.status(http_status_1.default.OK).json({
+                status: "success",
+                message: "Completed recycle schedules fetched successfully",
+                data: completedRecycleSchedules,
+            });
         }
         catch (error) {
             next(error);

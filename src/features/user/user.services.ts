@@ -414,7 +414,22 @@ export class UserService {
 
   // Notifications
 
-  // get notifications by id
+  private async getOwnedNotification(userId: string, notificationId: string) {
+    const notification = await prismaClient.notification.findFirst({
+      where: {
+        id: notificationId,
+        userId,
+        isDeleted: false,
+      },
+    });
+
+    if (!notification) {
+      throw new Error("Notification not found");
+    }
+
+    return notification;
+  }
+
   public async getNotificationById(notificationId: string) {
     const notification = await prismaClient.notification.findUnique({
       where: { id: notificationId },
@@ -422,47 +437,86 @@ export class UserService {
     return notification;
   }
 
-  public async getNotifications(user: IUser) {
-    const notifications = await prismaClient.notification.findMany({
-      where: { userId: user.id },
-      orderBy: {
-        createdAt: "desc",
+  public async getNotifications(
+    user: IUser,
+    options?: { page?: number; limit?: number; unreadOnly?: boolean }
+  ) {
+    const page = Math.max(1, options?.page ?? 1);
+    const limit = Math.min(50, Math.max(1, options?.limit ?? 20));
+    const skip = (page - 1) * limit;
+
+    const where = {
+      userId: user.id,
+      isDeleted: false,
+      ...(options?.unreadOnly ? { isRead: false } : {}),
+    };
+
+    const [notifications, total, unreadCount] = await Promise.all([
+      prismaClient.notification.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prismaClient.notification.count({ where }),
+      prismaClient.notification.count({
+        where: { userId: user.id, isDeleted: false, isRead: false },
+      }),
+    ]);
+
+    return {
+      notifications,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+        unreadCount,
       },
+    };
+  }
+
+  public async getUnreadNotificationCount(userId: string) {
+    const unreadCount = await prismaClient.notification.count({
+      where: { userId, isDeleted: false, isRead: false },
     });
-    return notifications;
+
+    return { unreadCount };
   }
 
   public async markNotificationAsRead(user: IUser, notificationId: string) {
-    const _notification = await this.getNotificationById(notificationId);
-    if (!_notification) {
-      throw new Error("Notification not found");
-    }
+    await this.getOwnedNotification(user.id, notificationId);
 
-    if (_notification.userId !== user.id) {
-      throw Error("You don't have permission to delete this");
-    }
-
-    const notification = await prismaClient.notification.update({
+    return prismaClient.notification.update({
       where: { id: notificationId },
       data: { isRead: true },
     });
-    return notification;
   }
 
   public async markNotificationAsUnread(user: IUser, notificationId: string) {
-    const _notification = await this.getNotificationById(notificationId);
-    if (!_notification) {
-      throw new Error("Notification not found");
-    }
+    await this.getOwnedNotification(user.id, notificationId);
 
-    if (_notification.userId !== user.id) {
-      throw Error("You don't have permission to mark this as unread");
-    }
-
-    const notification = await prismaClient.notification.update({
+    return prismaClient.notification.update({
       where: { id: notificationId },
       data: { isRead: false },
     });
-    return notification;
+  }
+
+  public async markAllNotificationsAsRead(userId: string) {
+    const result = await prismaClient.notification.updateMany({
+      where: { userId, isDeleted: false, isRead: false },
+      data: { isRead: true },
+    });
+
+    return { updatedCount: result.count };
+  }
+
+  public async deleteNotification(user: IUser, notificationId: string) {
+    await this.getOwnedNotification(user.id, notificationId);
+
+    return prismaClient.notification.update({
+      where: { id: notificationId },
+      data: { isDeleted: true, isRead: true },
+    });
   }
 }

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { walletController } from "../../infastructure/https/controller/controller.module";
 import { isUserAuthenticated } from "../../infastructure/https/middlewares/auth.user.middleware";
 import validate from "../../infastructure/https/validation/app.validate";
-import { creditUserWalletValidator, resolveBankAccountValidator, transferToBankValidator } from "./wallet.validator";
+import { creditUserWalletValidator, createCardChargeUrlValidator, resolveBankAccountValidator, topupBankValidator, transferToBankValidator } from "./wallet.validator";
 import { bankAccountResolveLimiter } from "./wallet.middleware";
 
 const router = Router();
@@ -20,7 +20,13 @@ router
 router.route("/topup-card").post(isUserAuthenticated, walletController.topUpWalletCard);
 
 // Create Card Charge URL
-router.route("/create-card-charge-url").post(isUserAuthenticated, walletController.createCardChargeURL);
+router
+  .route("/create-card-charge-url")
+  .post(
+    isUserAuthenticated,
+    validate(createCardChargeUrlValidator),
+    walletController.createCardChargeURL
+  );
 
 // Get Banks List
 router.route("/banks").get(isUserAuthenticated, walletController.getBanksList);
@@ -52,7 +58,9 @@ router.route("/transfer-to-bank-uk-user").post(isUserAuthenticated, walletContro
 router.route("/resolve-uk").post(isUserAuthenticated, walletController.resolveUK);
 
 // Top up Bank
-router.route("/topup-bank").post(isUserAuthenticated, walletController.topupBank);
+router
+  .route("/topup-bank")
+  .post(isUserAuthenticated, validate(topupBankValidator), walletController.topupBank);
 
 // Credit User Wallet — requires authentication
 router

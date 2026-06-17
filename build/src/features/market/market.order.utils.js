@@ -30,6 +30,7 @@ function enrichOrderProduct(product, resolvedMaterial, materialTitleSnapshot) {
     const materialTitle = materialTitleSnapshot?.trim() || material.title || material.category;
     return {
         ...rest,
+        materialId,
         images: product.images ?? [],
         material,
         materialTitle,

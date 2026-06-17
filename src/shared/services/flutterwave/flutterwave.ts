@@ -15,6 +15,11 @@ export default class Flutterwave extends FlutterwaveUtil {
       data,
       endpoints.CREATE_CARD_CHARGE
     );
+
+    if (response.status !== "success") {
+      throw new Error(response.message || "Payment link creation failed");
+    }
+
     return response;
   }
 

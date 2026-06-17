@@ -2,7 +2,12 @@ import { Router } from "express";
 import { isUserAuthenticated } from "../../infastructure/https/middlewares/auth.user.middleware";
 import { userController } from "../../infastructure/https/controller/controller.module";
 import validate from "../../infastructure/https/validation/app.validate";
-import { updateUserValidator, uploadImageValidator } from "./user.validator";
+import {
+  getNotificationsQueryValidator,
+  notificationIdParamValidator,
+  updateUserValidator,
+  uploadImageValidator,
+} from "./user.validator";
 import { updateDeviceValidator, updateSettingsValidator } from "../authentication/validators/auth.validator";
 
 const router = Router();
@@ -76,14 +81,42 @@ router.route("/delete").delete(
 // Notifications
 router
   .route("/get-notifications")
-  .get(isUserAuthenticated, userController.getNotifications);
+  .get(
+    isUserAuthenticated,
+    validate(getNotificationsQueryValidator),
+    userController.getNotifications
+  );
+
+router
+  .route("/notifications/unread-count")
+  .get(isUserAuthenticated, userController.getUnreadNotificationCount);
+
+router
+  .route("/mark-all-notifications-as-read")
+  .patch(isUserAuthenticated, userController.markAllNotificationsAsRead);
 
 router
   .route("/mark-notification-as-read/:id")
-  .patch(isUserAuthenticated, userController.markNotificationAsRead);
+  .patch(
+    isUserAuthenticated,
+    validate(notificationIdParamValidator),
+    userController.markNotificationAsRead
+  );
 
 router
   .route("/mark-notification-as-unread/:id")
-  .patch(isUserAuthenticated, userController.markNotificationAsUnread);
+  .patch(
+    isUserAuthenticated,
+    validate(notificationIdParamValidator),
+    userController.markNotificationAsUnread
+  );
+
+router
+  .route("/delete-notification/:id")
+  .delete(
+    isUserAuthenticated,
+    validate(notificationIdParamValidator),
+    userController.deleteNotification
+  );
 
 export default router;

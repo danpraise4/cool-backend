@@ -14,6 +14,7 @@ const http_status_1 = __importDefault(require("http-status"));
 const region_1 = require("../../shared/config/region");
 const email_notification_service_1 = require("../../shared/services/email/email-notification.service");
 const notification_service_1 = require("../../shared/services/notification/notification.service");
+const recycle_public_utils_1 = require("./recycle.public.utils");
 class RecycleService {
     adminClient;
     constructor() {
@@ -87,6 +88,7 @@ class RecycleService {
             title: "Recycle request submitted",
             body: `Your recycle request to ${facility.payload.name} for ${material.payload.category} was submitted.`,
             link: "/recycle",
+            type: "RECYCLE_REQUEST_SUBMITTED",
             data: {
                 type: "RECYCLE_REQUEST_SUBMITTED",
                 scheduleId: schedule.id,
@@ -117,7 +119,7 @@ class RecycleService {
             scheduledCollectionDate: scheduledDate.toISOString(),
             quantity: config.schedule.quantity || 0,
         });
-        return connect_1.default.recycleSchedule.update({
+        const updatedSchedule = await connect_1.default.recycleSchedule.update({
             where: { id: config.id },
             data: {
                 dates: [scheduledDate],
@@ -125,6 +127,32 @@ class RecycleService {
                 quantity: config.schedule.quantity ?? existingSchedule.quantity ?? 1,
             },
         });
+        const newStatus = updatedSchedule.status;
+        if (newStatus === client_1.RecycleScheduleStatus.COMPLETED) {
+            void notification_service_1.notificationService.createAndSend(config.userId, {
+                title: "Recycle completed",
+                body: "Your recycling schedule was marked as completed.",
+                link: "/recycle",
+                type: "RECYCLE_COMPLETED",
+                data: {
+                    type: "RECYCLE_COMPLETED",
+                    scheduleId: config.id,
+                },
+            });
+        }
+        else if (newStatus === client_1.RecycleScheduleStatus.CANCELLED) {
+            void notification_service_1.notificationService.createAndSend(config.userId, {
+                title: "Recycle cancelled",
+                body: "Your recycling schedule was cancelled.",
+                link: "/recycle",
+                type: "RECYCLE_CANCELLED",
+                data: {
+                    type: "RECYCLE_CANCELLED",
+                    scheduleId: config.id,
+                },
+            });
+        }
+        return updatedSchedule;
     }
     async getRecycleScheduleByTransactionId(config) {
         const schedule = await connect_1.default.recycleSchedule.findFirst({
@@ -281,27 +309,88 @@ class RecycleService {
         });
         const users = await connect_1.default.user.findMany({
             where: { id: { in: topRecyclers.map((r) => r.userId) } },
-            select: { id: true, firstName: true, lastName: true, image: true, email: true },
+            select: { id: true, firstName: true, lastName: true, image: true },
         });
-        return topRecyclers.map((recycler) => ({
-            userId: recycler.userId,
-            recycleCount: recycler._count.id,
-            user: users.find((u) => u.id === recycler.userId),
-        }));
+        return topRecyclers.map((recycler) => {
+            const user = users.find((u) => u.id === recycler.userId);
+            return {
+                userId: recycler.userId,
+                recycleCount: recycler._count.id,
+                user: user
+                    ? {
+                        id: user.id,
+                        firstName: user.firstName,
+                        lastName: user.lastName,
+                        image: user.image,
+                    }
+                    : null,
+            };
+        });
+    }
+    async resolveScheduleFacility(facilityId) {
+        try {
+            const facility = await this.adminClient.getFacilityById(facilityId);
+            return (0, recycle_public_utils_1.mapPublicFacility)(facility.payload);
+        }
+        catch {
+            return (0, recycle_public_utils_1.mapPublicFacility)({
+                id: facilityId,
+                name: "Unknown facility",
+                rating: 0,
+                profilePhoto: "",
+                currency: "NGN",
+                workingDays: [],
+                materialUnitPrice: [],
+                distanceInMiles: 0,
+            });
+        }
+    }
+    async resolveScheduleMaterial(materialId) {
+        try {
+            const material = await this.adminClient.getMaterialById(materialId);
+            return (0, recycle_public_utils_1.mapPublicMaterial)(material.payload);
+        }
+        catch {
+            return (0, recycle_public_utils_1.mapPublicMaterial)({ id: materialId, category: materialId });
+        }
     }
     async getCompletedRecycleSchedules(config) {
         const schedules = await connect_1.default.recycleSchedule.findMany({
-            where: { userId: config.userId, status: client_1.Status.COMPLETED },
+            where: { userId: config.userId,
+                status: {
+                    in: [
+                        client_1.RecycleScheduleStatus.COMPLETED,
+                        client_1.RecycleScheduleStatus.IN_PROGRESS,
+                        client_1.RecycleScheduleStatus.PENDING,
+                    ],
+                },
+            },
+            orderBy: { updatedAt: "desc" },
         });
-        return Promise.all(schedules.map(async (schedule) => ({
-            ...schedule,
-            facility: (await this.adminClient.getFacilityById(schedule.facility)).payload,
-            material: (await this.adminClient.getMaterialById(schedule.material)).payload,
+        return Promise.all(schedules.map(async (schedule) => (0, recycle_public_utils_1.mapCompletedScheduleRow)({
+            id: schedule.id,
+            status: schedule.status,
+            type: schedule.type,
+            updatedAt: schedule.updatedAt,
+            userId: schedule.userId,
+            facilityId: schedule.facility,
+            materialId: schedule.material,
+            quantity: schedule.quantity,
+            dates: schedule.dates,
+            facility: await this.resolveScheduleFacility(schedule.facility),
+            material: await this.resolveScheduleMaterial(schedule.material),
         })));
     }
     async getUserRecyclingAnalytics(userId, timeRange) {
         const where = {
             userId,
+            status: {
+                in: [
+                    client_1.RecycleScheduleStatus.COMPLETED,
+                    client_1.RecycleScheduleStatus.IN_PROGRESS,
+                    client_1.RecycleScheduleStatus.PENDING,
+                ],
+            },
             ...(timeRange && {
                 createdAt: {
                     ...(timeRange.start && { gte: timeRange.start }),
@@ -309,27 +398,20 @@ class RecycleService {
                 },
             }),
         };
-        const [recyclingByMaterial, allMaterials] = await Promise.all([
-            connect_1.default.recycleSchedule.groupBy({
-                by: ["material"],
-                where,
-                _count: { id: true },
-            }),
-            this.adminClient.getMaterial(),
-        ]);
-        const countMap = new Map(recyclingByMaterial.map((item) => [item.material, item._count.id]));
-        const analyticsData = allMaterials.payload.map((material) => ({
-            materialId: material.id,
-            materialTitle: material.category,
-            recycleCount: countMap.get(material.id.toString()) || 0,
-            material,
-        }));
-        analyticsData.sort((a, b) => {
-            if (a.recycleCount !== b.recycleCount)
-                return b.recycleCount - a.recycleCount;
-            return a.materialTitle.localeCompare(b.materialTitle);
+        const recyclingByMaterial = await connect_1.default.recycleSchedule.groupBy({
+            by: ["material"],
+            where,
+            _count: { id: true },
         });
-        return analyticsData;
+        let allMaterials = [];
+        try {
+            const materialsResponse = await this.adminClient.getMaterial();
+            allMaterials = materialsResponse.payload;
+        }
+        catch {
+            allMaterials = [];
+        }
+        return (0, recycle_public_utils_1.filterAnalyticsRowsForMobile)((0, recycle_public_utils_1.buildUserRecyclingAnalyticsRows)(recyclingByMaterial, allMaterials));
     }
 }
 exports.RecycleService = RecycleService;

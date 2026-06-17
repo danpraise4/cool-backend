@@ -2,8 +2,9 @@ import prismaClient from "../../infastructure/database/postgreSQL/connect";
 import { Helper } from "../../shared/helper/helper";
 import AdminServiceClient from "../../shared/services/admin/adminservice.client";
 import AdminService from "../../shared/services/admin/adminservice";
-import { ICommunityCreateSchedule, IUpdateRecycleSchedule } from "./recycle.intefase";
-import { RecycleChatType, RecycleScheduleStatus, Status, User } from "@prisma/client";
+import { IMaterialData } from "../../shared/services/admin/adminservice.interface";
+import { ICommunityCreateSchedule, IRecycleScheduleUser, IUpdateRecycleSchedule } from "./recycle.intefase";
+import { RecycleChatType, RecycleScheduleStatus } from "@prisma/client";
 import AppException from "../../infastructure/https/exception/app.exception";
 import httpStatus from "http-status";
 import { getCountryForCity } from "../../shared/config/region";
@@ -12,6 +13,7 @@ import {
   EmailNotificationType,
 } from "../../shared/services/email/email-notification.service";
 import { notificationService } from "../../shared/services/notification/notification.service";
+import { mapPublicFacility, mapPublicMaterial, buildUserRecyclingAnalyticsRows, mapCompletedScheduleRow, filterAnalyticsRowsForMobile } from "./recycle.public.utils";
 
 export class RecycleService {
   private readonly adminClient: AdminService;
@@ -21,7 +23,7 @@ export class RecycleService {
   }
 
   public async createRecycleSchedule(config: {
-    user: User;
+    user: IRecycleScheduleUser;
     schedule: ICommunityCreateSchedule;
   }) {
     const { type, facilityId, materialId, dates } = config.schedule;
@@ -104,6 +106,7 @@ export class RecycleService {
       title: "Recycle request submitted",
       body: `Your recycle request to ${facility.payload.name} for ${material.payload.category} was submitted.`,
       link: "/recycle",
+      type: "RECYCLE_REQUEST_SUBMITTED",
       data: {
         type: "RECYCLE_REQUEST_SUBMITTED",
         scheduleId: schedule.id,
@@ -155,7 +158,7 @@ export class RecycleService {
       quantity: config.schedule.quantity || 0,
     });
 
-    return prismaClient.recycleSchedule.update({
+    const updatedSchedule = await prismaClient.recycleSchedule.update({
       where: { id: config.id },
       data: {
         dates: [scheduledDate],
@@ -165,6 +168,33 @@ export class RecycleService {
         quantity: config.schedule.quantity ?? existingSchedule.quantity ?? 1,
       },
     });
+
+    const newStatus = updatedSchedule.status;
+    if (newStatus === RecycleScheduleStatus.COMPLETED) {
+      void notificationService.createAndSend(config.userId, {
+        title: "Recycle completed",
+        body: "Your recycling schedule was marked as completed.",
+        link: "/recycle",
+        type: "RECYCLE_COMPLETED",
+        data: {
+          type: "RECYCLE_COMPLETED",
+          scheduleId: config.id,
+        },
+      });
+    } else if (newStatus === RecycleScheduleStatus.CANCELLED) {
+      void notificationService.createAndSend(config.userId, {
+        title: "Recycle cancelled",
+        body: "Your recycling schedule was cancelled.",
+        link: "/recycle",
+        type: "RECYCLE_CANCELLED",
+        data: {
+          type: "RECYCLE_CANCELLED",
+          scheduleId: config.id,
+        },
+      });
+    }
+
+    return updatedSchedule;
   }
 
   public async getRecycleScheduleByTransactionId(config: {
@@ -379,27 +409,84 @@ export class RecycleService {
 
     const users = await prismaClient.user.findMany({
       where: { id: { in: topRecyclers.map((r) => r.userId) } },
-      select: { id: true, firstName: true, lastName: true, image: true, email: true },
+      select: { id: true, firstName: true, lastName: true, image: true },
     });
 
-    return topRecyclers.map((recycler) => ({
-      userId: recycler.userId,
-      recycleCount: recycler._count.id,
-      user: users.find((u) => u.id === recycler.userId),
-    }));
+    return topRecyclers.map((recycler) => {
+      const user = users.find((u) => u.id === recycler.userId);
+
+      return {
+        userId: recycler.userId,
+        recycleCount: recycler._count.id,
+        user: user
+          ? {
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            image: user.image,
+          }
+          : null,
+      };
+    });
+  }
+
+  private async resolveScheduleFacility(facilityId: string) {
+    try {
+      const facility = await this.adminClient.getFacilityById(facilityId);
+      return mapPublicFacility(facility.payload);
+    } catch {
+      return mapPublicFacility({
+        id: facilityId,
+        name: "Unknown facility",
+        rating: 0,
+        profilePhoto: "",
+        currency: "NGN",
+        workingDays: [],
+        materialUnitPrice: [],
+        distanceInMiles: 0,
+      });
+    }
+  }
+
+  private async resolveScheduleMaterial(materialId: string) {
+    try {
+      const material = await this.adminClient.getMaterialById(materialId);
+      return mapPublicMaterial(material.payload);
+    } catch {
+      return mapPublicMaterial({ id: materialId, category: materialId });
+    }
   }
 
   public async getCompletedRecycleSchedules(config: { userId: string }) {
     const schedules = await prismaClient.recycleSchedule.findMany({
-      where: { userId: config.userId, status: Status.COMPLETED },
+      where: { userId: config.userId, 
+        status: {
+          in: [
+            RecycleScheduleStatus.COMPLETED,
+            RecycleScheduleStatus.IN_PROGRESS,
+            RecycleScheduleStatus.PENDING,
+          ],
+        },
+      },
+      orderBy: { updatedAt: "desc" },
     });
 
     return Promise.all(
-      schedules.map(async (schedule) => ({
-        ...schedule,
-        facility: (await this.adminClient.getFacilityById(schedule.facility)).payload,
-        material: (await this.adminClient.getMaterialById(schedule.material)).payload,
-      }))
+      schedules.map(async (schedule) =>
+        mapCompletedScheduleRow({
+          id: schedule.id,
+          status: schedule.status,
+          type: schedule.type,
+          updatedAt: schedule.updatedAt,
+          userId: schedule.userId,
+          facilityId: schedule.facility,
+          materialId: schedule.material,
+          quantity: schedule.quantity,
+          dates: schedule.dates,
+          facility: await this.resolveScheduleFacility(schedule.facility),
+          material: await this.resolveScheduleMaterial(schedule.material),
+        })
+      )
     );
   }
 
@@ -407,8 +494,15 @@ export class RecycleService {
     userId: string,
     timeRange?: { start?: Date; end?: Date }
   ) {
-    const where = {
+    const where: any = {
       userId,
+      status: {
+        in: [
+          RecycleScheduleStatus.COMPLETED,
+          RecycleScheduleStatus.IN_PROGRESS,
+          RecycleScheduleStatus.PENDING,
+        ],
+      },
       ...(timeRange && {
         createdAt: {
           ...(timeRange.start && { gte: timeRange.start }),
@@ -417,31 +511,22 @@ export class RecycleService {
       }),
     };
 
-    const [recyclingByMaterial, allMaterials] = await Promise.all([
-      prismaClient.recycleSchedule.groupBy({
-        by: ["material"],
-        where,
-        _count: { id: true },
-      }),
-      this.adminClient.getMaterial(),
-    ]);
-
-    const countMap = new Map(
-      recyclingByMaterial.map((item) => [item.material, item._count.id])
-    );
-
-    const analyticsData = allMaterials.payload.map((material) => ({
-      materialId: material.id,
-      materialTitle: material.category,
-      recycleCount: countMap.get(material.id.toString()) || 0,
-      material,
-    }));
-
-    analyticsData.sort((a, b) => {
-      if (a.recycleCount !== b.recycleCount) return b.recycleCount - a.recycleCount;
-      return a.materialTitle.localeCompare(b.materialTitle);
+    const recyclingByMaterial = await prismaClient.recycleSchedule.groupBy({
+      by: ["material"],
+      where,
+      _count: { id: true },
     });
 
-    return analyticsData;
+    let allMaterials: IMaterialData[] = [];
+    try {
+      const materialsResponse = await this.adminClient.getMaterial();
+      allMaterials = materialsResponse.payload;
+    } catch {
+      allMaterials = [];
+    }
+
+    return filterAnalyticsRowsForMobile(
+      buildUserRecyclingAnalyticsRows(recyclingByMaterial, allMaterials)
+    );
   }
 }

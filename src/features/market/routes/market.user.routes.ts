@@ -48,10 +48,10 @@ router
   .route("/i")
   .get(isUserAuthenticated, marketUserController.getUserProducts);
 
-// Get charity product requests for auth user
+// Get charity history (donated + received)
 router
   .route("/i/charity/history")
-  .get(isUserAuthenticated, marketUserController.getCharityProducts);
+  .get(isUserAuthenticated, marketUserController.getCharityHistory);
 
 // Get charity product requests for auth user
 router

@@ -169,10 +169,35 @@ export class UserController {
     next: NextFunction
   ) => {
     try {
-      const notifications = await this.userService.getNotifications(req.user);
+      const page = req.query.page ? Number(req.query.page) : undefined;
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const unreadOnly = req.query.unreadOnly === "true";
+
+      const result = await this.userService.getNotifications(req.user, {
+        page,
+        limit,
+        unreadOnly,
+      });
       sendSuccess(res, httpStatus.OK, {
         message: "Notifications fetched successfully",
-        data: notifications,
+        data: result.notifications,
+        meta: result.meta,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getUnreadNotificationCount = async (
+    req: RequestType,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const data = await this.userService.getUnreadNotificationCount(req.user.id);
+      sendSuccess(res, httpStatus.OK, {
+        message: "Unread notification count fetched successfully",
+        data,
       });
     } catch (error) {
       next(error);
@@ -210,6 +235,41 @@ export class UserController {
       );
       sendSuccess(res, httpStatus.OK, {
         message: "Notification marked as unread",
+        data: notification,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public markAllNotificationsAsRead = async (
+    req: RequestType,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const data = await this.userService.markAllNotificationsAsRead(req.user.id);
+      sendSuccess(res, httpStatus.OK, {
+        message: "All notifications marked as read",
+        data,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public deleteNotification = async (
+    req: RequestType,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const notification = await this.userService.deleteNotification(
+        req.user,
+        req.params.id
+      );
+      sendSuccess(res, httpStatus.OK, {
+        message: "Notification deleted successfully",
         data: notification,
       });
     } catch (error) {

@@ -69,6 +69,36 @@ export const resolveBankAccountValidator = {
   }),
 };
 
+export const topupBankValidator = {
+  body: Joi.object().keys({
+    amount: Joi.alternatives()
+      .try(
+        Joi.number().positive(),
+        Joi.string().pattern(/^\d+(\.\d{1,2})?$/)
+      )
+      .required()
+      .messages({
+        "any.required": "Top-up amount is required",
+        "alternatives.match": "Amount must be a positive number",
+      }),
+  }),
+};
+
+export const createCardChargeUrlValidator = {
+  body: Joi.object().keys({
+    amount: Joi.alternatives()
+      .try(
+        Joi.number().positive(),
+        Joi.string().pattern(/^\d+(\.\d{1,2})?$/)
+      )
+      .required()
+      .messages({
+        "any.required": "Top-up amount is required",
+        "alternatives.match": "Amount must be greater than zero",
+      }),
+  }),
+};
+
 export const transferToBankValidator = {
   body: Joi.object().keys({
     account_number: Joi.string()

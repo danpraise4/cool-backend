@@ -209,11 +209,25 @@ class AuthUserService {
             email_notification_service_1.emailNotificationService.notifyUser(_user.id, email_notification_service_1.EmailNotificationType.REGISTRATION, {
                 firstName: _user.firstName,
             });
+            void notification_service_1.notificationService.createAndSend(_user.id, {
+                title: "Welcome to Recycool",
+                body: `Hi ${_user.firstName}, your account was created successfully.`,
+                link: "/home",
+                type: "REGISTRATION",
+                data: { type: "REGISTRATION" },
+            });
             return { isNewUser: true, user: _user, token: _token };
         }
         const _token = await this.generateToken(_user.id, `${_user.firstName} ${_user.lastName}`);
         email_notification_service_1.emailNotificationService.notifyUser(_user.id, email_notification_service_1.EmailNotificationType.LOGIN, {
             firstName: _user.firstName,
+        });
+        void notification_service_1.notificationService.createAndSend(_user.id, {
+            title: "Welcome back",
+            body: `Hi ${_user.firstName}, you signed in successfully.`,
+            link: "/home",
+            type: "LOGIN",
+            data: { type: "LOGIN" },
         });
         return {
             isNewUser: !_user.cityOfResidence,

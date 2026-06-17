@@ -1,6 +1,16 @@
 import { RecycleScheduleType } from "@prisma/client";
 import { RECYCLE_REQUEST_STATUS } from "../../shared/config/app.constants";
 
+export interface IRecycleScheduleUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address: string;
+  cityOfResidence: string;
+}
+
 export interface ICommunityCreateSchedule {
   type: RecycleScheduleType;
   facilityId: string;

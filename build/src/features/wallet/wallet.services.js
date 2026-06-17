@@ -19,6 +19,7 @@ const http_status_1 = __importDefault(require("http-status"));
 const email_notification_service_1 = require("../../shared/services/email/email-notification.service");
 const notification_service_1 = require("../../shared/services/notification/notification.service");
 const wallet_withdraw_utils_1 = require("./wallet.withdraw.utils");
+const wallet_topup_utils_1 = require("./wallet.topup.utils");
 const NGN_BANKS_CACHE_TTL_MS = 60 * 60 * 1000;
 let ngnBanksCache = null;
 class WalletService {
@@ -61,15 +62,32 @@ class WalletService {
         }
         return { message: "Hook received" };
     }
+    async resolveWalletForTopUp(txRef) {
+        const pendingTopUp = await connect_1.default.transaction.findFirst({
+            where: {
+                reference: txRef,
+                type: client_1.TransactionType.TOPUP,
+                status: client_1.Status.PENDING,
+            },
+            include: { wallet: true },
+        });
+        if (pendingTopUp?.wallet) {
+            return { wallet: pendingTopUp.wallet, pendingTopUp };
+        }
+        const userId = (0, wallet_topup_utils_1.parseUserIdFromTopUpReference)(txRef);
+        if (!userId) {
+            return { wallet: null, pendingTopUp: null };
+        }
+        const wallet = await connect_1.default.wallet.findFirst({ where: { userId } });
+        return { wallet, pendingTopUp: null };
+    }
     async handleChargeCompleted(data) {
         const { tx_ref, flw_ref, amount } = data;
         // Confirm recycle transaction in background — failure must not block wallet credit
         this.adminClient.confirmRecycleTransaction(flw_ref, data).catch((err) => {
             logger_1.default.error({ err }, "Failed to confirm recycle transaction");
         });
-        const account = await connect_1.default.wallet.findFirst({
-            where: { userId: tx_ref },
-        });
+        const { wallet: account, pendingTopUp } = await this.resolveWalletForTopUp(tx_ref);
         if (!account) {
             logger_1.default.warn({ tx_ref }, "paymentHook: wallet not found for tx_ref");
             return { message: "Wallet not found" };
@@ -86,6 +104,25 @@ class WalletService {
                 where: { id: account.id },
                 data: { balance: { increment: amount } },
             });
+            if (pendingTopUp) {
+                return tx.transaction.update({
+                    where: { id: pendingTopUp.id },
+                    data: {
+                        amount,
+                        status: client_1.Status.COMPLETED,
+                        reference: flw_ref,
+                        description: "Wallet top-up via Flutterwave bank transfer",
+                        balanceBefore: account.balance,
+                        balanceAfter: wallet.balance,
+                        metadata: {
+                            ...pendingTopUp.metadata,
+                            tx_ref,
+                            flw_ref,
+                            flutterwave: data,
+                        },
+                    },
+                });
+            }
             return tx.transaction.create({
                 data: {
                     walletId: account.id,
@@ -98,7 +135,7 @@ class WalletService {
                     balanceAfter: wallet.balance,
                     fee: 0,
                     userId: account.userId,
-                    metadata: { flw_ref },
+                    metadata: { tx_ref, flw_ref },
                 },
             });
         });
@@ -111,6 +148,7 @@ class WalletService {
             title: "Wallet top-up successful",
             body: `Your wallet was credited with ${amount} ${account.currency}.`,
             link: "/wallet",
+            type: "WALLET_TOPUP",
             data: {
                 type: "WALLET_TOPUP",
                 reference: flw_ref,
@@ -249,7 +287,7 @@ class WalletService {
         });
     }
     async createCardCharge({ user, card }) {
-        const txRef = `${user.id}-${Date.now()}`;
+        const txRef = (0, wallet_topup_utils_1.buildWalletTopUpReference)(user.id);
         const payload = {
             preauthorize: false,
             usesecureauth: true,
@@ -279,19 +317,57 @@ class WalletService {
         if (!numericAmount || numericAmount <= 0 || Number.isNaN(numericAmount)) {
             throw new app_exception_1.default("Invalid top-up amount", http_status_1.default.BAD_REQUEST);
         }
-        const txRef = `${user.id}-${Date.now()}`;
+        const txRef = (0, wallet_topup_utils_1.buildWalletTopUpReference)(user.id);
+        const redirectUrl = `https://recycool.com/wallet/payment/successful?reference=${encodeURIComponent(txRef)}`;
         const payload = {
             tx_ref: txRef,
             amount: numericAmount.toString(),
             currency,
-            redirect_url: "https://recycool.com/wallet/topup-success",
+            redirect_url: redirectUrl,
             customer: {
                 email: user.email,
                 name: `${user.firstName} ${user.lastName}`,
             },
             customizations: { title: "Top-up Wallet" },
+            meta: {
+                userId: user.id,
+                type: "WALLET_TOPUP",
+                reference: txRef,
+            },
         };
-        return this.flutterwaveClient.createCardCharge(payload);
+        let providerResponse;
+        try {
+            providerResponse = await this.flutterwaveClient.createCardCharge(payload);
+        }
+        catch (err) {
+            throw this.mapFlutterwaveError(err);
+        }
+        const normalized = (0, wallet_topup_utils_1.normalizeCardTopUpPayment)(txRef, numericAmount, currency, providerResponse);
+        if (!normalized.paymentUrl) {
+            throw new app_exception_1.default("Could not create payment link", http_status_1.default.BAD_GATEWAY);
+        }
+        await connect_1.default.transaction.create({
+            data: {
+                walletId: wallet.id,
+                userId: user.id,
+                amount: numericAmount,
+                status: client_1.Status.PENDING,
+                type: client_1.TransactionType.TOPUP,
+                reference: txRef,
+                description: "Pending card checkout top-up",
+                balanceBefore: wallet.balance,
+                balanceAfter: wallet.balance,
+                fee: 0,
+                metadata: {
+                    provider: "flutterwave",
+                    chargeType: "card_checkout",
+                    paymentUrl: normalized.paymentUrl,
+                    redirectUrl,
+                    flutterwave: providerResponse,
+                },
+            },
+        });
+        return normalized;
     }
     async getBankAccountDetails(userId, body) {
         await this.assertNgnWallet(userId);
@@ -454,6 +530,16 @@ class WalletService {
             currency: wallet.currency,
             reference: ref,
         });
+        void notification_service_1.notificationService.createAndSend(wallet.userId, {
+            title: "Withdrawal initiated",
+            body: `Your withdrawal of ${numericAmount} ${wallet.currency} has been initiated.`,
+            link: "/wallet",
+            type: "WALLET_WITHDRAWAL",
+            data: {
+                type: "WALLET_WITHDRAWAL",
+                reference: ref,
+            },
+        });
         return {
             reference: ref,
             transfer: response.data,
@@ -469,7 +555,7 @@ class WalletService {
         if (!numericAmount || numericAmount <= 0 || Number.isNaN(numericAmount)) {
             throw new app_exception_1.default("Invalid top-up amount", http_status_1.default.BAD_REQUEST);
         }
-        const txRef = `${user.id}-${Date.now()}`;
+        const txRef = (0, wallet_topup_utils_1.buildWalletTopUpReference)(user.id);
         const payload = {
             amount: numericAmount,
             email: user.email,
@@ -479,7 +565,33 @@ class WalletService {
             currency: "NGN",
             redirect_url: "https://recycool.com/wallet/topup-success",
         };
-        return this.flutterwaveClient.chargeBank(payload);
+        const providerResponse = await this.flutterwaveClient.chargeBank(payload);
+        const transferDetails = (0, wallet_topup_utils_1.extractFlutterwaveBankTransferDetails)(providerResponse);
+        const normalized = (0, wallet_topup_utils_1.normalizeVirtualAccountTopUp)(txRef, numericAmount, "NGN", transferDetails);
+        if (!normalized.accountNumber) {
+            throw new app_exception_1.default("Virtual account could not be generated. Please try again.", http_status_1.default.BAD_GATEWAY);
+        }
+        await connect_1.default.transaction.create({
+            data: {
+                walletId: wallet.id,
+                userId: user.id,
+                amount: numericAmount,
+                status: client_1.Status.PENDING,
+                type: client_1.TransactionType.TOPUP,
+                reference: txRef,
+                description: "Pending NGN bank transfer top-up",
+                balanceBefore: wallet.balance,
+                balanceAfter: wallet.balance,
+                fee: 0,
+                metadata: {
+                    provider: "flutterwave",
+                    chargeType: "bank_transfer",
+                    virtualAccount: normalized.virtualAccount,
+                    flutterwave: providerResponse,
+                },
+            },
+        });
+        return normalized;
     }
     async getBanksList(user) {
         const wallet = await this.getWallet(user.id);

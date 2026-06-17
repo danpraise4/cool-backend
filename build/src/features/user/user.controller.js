@@ -138,10 +138,30 @@ class UserController {
     };
     getNotifications = async (req, res, next) => {
         try {
-            const notifications = await this.userService.getNotifications(req.user);
+            const page = req.query.page ? Number(req.query.page) : undefined;
+            const limit = req.query.limit ? Number(req.query.limit) : undefined;
+            const unreadOnly = req.query.unreadOnly === "true";
+            const result = await this.userService.getNotifications(req.user, {
+                page,
+                limit,
+                unreadOnly,
+            });
             (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Notifications fetched successfully",
-                data: notifications,
+                data: result.notifications,
+                meta: result.meta,
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    };
+    getUnreadNotificationCount = async (req, res, next) => {
+        try {
+            const data = await this.userService.getUnreadNotificationCount(req.user.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Unread notification count fetched successfully",
+                data,
             });
         }
         catch (error) {
@@ -165,6 +185,30 @@ class UserController {
             const notification = await this.userService.markNotificationAsUnread(req.user, req.params.id);
             (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
                 message: "Notification marked as unread",
+                data: notification,
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    };
+    markAllNotificationsAsRead = async (req, res, next) => {
+        try {
+            const data = await this.userService.markAllNotificationsAsRead(req.user.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "All notifications marked as read",
+                data,
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    };
+    deleteNotification = async (req, res, next) => {
+        try {
+            const notification = await this.userService.deleteNotification(req.user, req.params.id);
+            (0, response_1.sendSuccess)(res, http_status_1.default.OK, {
+                message: "Notification deleted successfully",
                 data: notification,
             });
         }

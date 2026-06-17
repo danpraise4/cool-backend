@@ -150,8 +150,7 @@ class WalletController {
     };
     getBanksList = async (req, res, next) => {
         try {
-            const user = req.user;
-            const banks = await this.walletService.getBanksList(user);
+            const banks = await this.walletService.getBanksList(req.user);
             return res.status(http_status_1.default.OK).json({
                 success: true,
                 status: "success",

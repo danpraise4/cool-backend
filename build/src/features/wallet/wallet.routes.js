@@ -20,7 +20,9 @@ router
 // Top up Wallet
 router.route("/topup-card").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.topUpWalletCard);
 // Create Card Charge URL
-router.route("/create-card-charge-url").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.createCardChargeURL);
+router
+    .route("/create-card-charge-url")
+    .post(auth_user_middleware_1.isUserAuthenticated, (0, app_validate_1.default)(wallet_validator_1.createCardChargeUrlValidator), controller_module_1.walletController.createCardChargeURL);
 // Get Banks List
 router.route("/banks").get(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.getBanksList);
 // Get Bank Account Details (Flutterwave resolve)
@@ -36,7 +38,9 @@ router.route("/transfer-to-bank-uk-user").post(auth_user_middleware_1.isUserAuth
 // Resolve UK 
 router.route("/resolve-uk").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.resolveUK);
 // Top up Bank
-router.route("/topup-bank").post(auth_user_middleware_1.isUserAuthenticated, controller_module_1.walletController.topupBank);
+router
+    .route("/topup-bank")
+    .post(auth_user_middleware_1.isUserAuthenticated, (0, app_validate_1.default)(wallet_validator_1.topupBankValidator), controller_module_1.walletController.topupBank);
 // Credit User Wallet — requires authentication
 router
     .route("/credit-user")

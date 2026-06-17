@@ -2,7 +2,6 @@ import httpStatus from "http-status";
 import { NextFunction, Request, Response } from "express";
 import { WalletService } from "./wallet.services";
 import { RequestType } from "../../shared/helper/helper";
-import { User } from "@prisma/client";
 import { sendSuccess } from "../../shared/helper/response";
 
 export default class WalletController {
@@ -180,8 +179,7 @@ export default class WalletController {
     next: NextFunction
   ) => {
     try {
-      const user: User = req.user;
-      const banks = await this.walletService.getBanksList(user);
+      const banks = await this.walletService.getBanksList(req.user);
       return res.status(httpStatus.OK).json({
         success: true,
         status: "success",

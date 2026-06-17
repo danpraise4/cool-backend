@@ -12,6 +12,9 @@ class Flutterwave extends flutterwave_utils_1.default {
     }
     async createCardCharge(data) {
         const response = await this.postRequest(this.buildHeader(), data, flutterwave_endpoints_1.endpoints.CREATE_CARD_CHARGE);
+        if (response.status !== "success") {
+            throw new Error(response.message || "Payment link creation failed");
+        }
         return response;
     }
     async chargeCard(data) {

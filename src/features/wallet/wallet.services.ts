@@ -25,6 +25,14 @@ import {
   NormalizedBank,
   parseWithdrawalAmount,
 } from "./wallet.withdraw.utils";
+import {
+  buildWalletTopUpReference,
+  extractFlutterwaveBankTransferDetails,
+  FlutterwaveBankTransferResponse,
+  normalizeCardTopUpPayment,
+  normalizeVirtualAccountTopUp,
+  parseUserIdFromTopUpReference,
+} from "./wallet.topup.utils";
 import { IFlutterwaveBaseResponse } from "../../shared/services/flutterwave/flutterwave.interface";
 
 const NGN_BANKS_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -86,6 +94,29 @@ export class WalletService {
     return { message: "Hook received" };
   }
 
+  private async resolveWalletForTopUp(txRef: string) {
+    const pendingTopUp = await prisma.transaction.findFirst({
+      where: {
+        reference: txRef,
+        type: TransactionType.TOPUP,
+        status: Status.PENDING,
+      },
+      include: { wallet: true },
+    });
+
+    if (pendingTopUp?.wallet) {
+      return { wallet: pendingTopUp.wallet, pendingTopUp };
+    }
+
+    const userId = parseUserIdFromTopUpReference(txRef);
+    if (!userId) {
+      return { wallet: null, pendingTopUp: null };
+    }
+
+    const wallet = await prisma.wallet.findFirst({ where: { userId } });
+    return { wallet, pendingTopUp: null };
+  }
+
   private async handleChargeCompleted(data: Record<string, unknown>) {
     const { tx_ref, flw_ref, amount } = data as {
       tx_ref: string;
@@ -98,9 +129,7 @@ export class WalletService {
       logger.error({ err }, "Failed to confirm recycle transaction");
     });
 
-    const account = await prisma.wallet.findFirst({
-      where: { userId: tx_ref },
-    });
+    const { wallet: account, pendingTopUp } = await this.resolveWalletForTopUp(tx_ref);
 
     if (!account) {
       logger.warn({ tx_ref }, "paymentHook: wallet not found for tx_ref");
@@ -122,6 +151,26 @@ export class WalletService {
         data: { balance: { increment: amount } },
       });
 
+      if (pendingTopUp) {
+        return tx.transaction.update({
+          where: { id: pendingTopUp.id },
+          data: {
+            amount,
+            status: Status.COMPLETED,
+            reference: flw_ref,
+            description: "Wallet top-up via Flutterwave bank transfer",
+            balanceBefore: account.balance,
+            balanceAfter: wallet.balance,
+            metadata: {
+              ...(pendingTopUp.metadata as object),
+              tx_ref,
+              flw_ref,
+              flutterwave: data,
+            } as object,
+          },
+        });
+      }
+
       return tx.transaction.create({
         data: {
           walletId: account.id,
@@ -134,7 +183,7 @@ export class WalletService {
           balanceAfter: wallet.balance,
           fee: 0,
           userId: account.userId,
-          metadata: { flw_ref },
+          metadata: { tx_ref, flw_ref },
         },
       });
     });
@@ -149,6 +198,7 @@ export class WalletService {
       title: "Wallet top-up successful",
       body: `Your wallet was credited with ${amount} ${account.currency}.`,
       link: "/wallet",
+      type: "WALLET_TOPUP",
       data: {
         type: "WALLET_TOPUP",
         reference: flw_ref,
@@ -324,7 +374,7 @@ export class WalletService {
   }
 
   public async createCardCharge({ user, card }: { user: User; card: ICard }) {
-    const txRef = `${user.id}-${Date.now()}`;
+    const txRef = buildWalletTopUpReference(user.id);
     const payload = {
       preauthorize: false,
       usesecureauth: true,
@@ -365,20 +415,69 @@ export class WalletService {
       throw new AppException("Invalid top-up amount", httpStatus.BAD_REQUEST);
     }
 
-    const txRef = `${user.id}-${Date.now()}`;
+    const txRef = buildWalletTopUpReference(user.id);
+    const redirectUrl = `https://recycool.com/wallet/payment/successful?reference=${encodeURIComponent(txRef)}`;
     const payload = {
       tx_ref: txRef,
       amount: numericAmount.toString(),
       currency,
-      redirect_url: "https://recycool.com/wallet/topup-success",
+      redirect_url: redirectUrl,
       customer: {
         email: user.email,
         name: `${user.firstName} ${user.lastName}`,
       },
       customizations: { title: "Top-up Wallet" },
+      meta: {
+        userId: user.id,
+        type: "WALLET_TOPUP",
+        reference: txRef,
+      },
     };
 
-    return this.flutterwaveClient.createCardCharge(payload);
+    let providerResponse;
+    try {
+      providerResponse = await this.flutterwaveClient.createCardCharge(payload);
+    } catch (err) {
+      throw this.mapFlutterwaveError(err);
+    }
+
+    const normalized = normalizeCardTopUpPayment(
+      txRef,
+      numericAmount,
+      currency,
+      providerResponse as unknown as Record<string, unknown>
+    );
+
+    if (!normalized.paymentUrl) {
+      throw new AppException(
+        "Could not create payment link",
+        httpStatus.BAD_GATEWAY
+      );
+    }
+
+    await prisma.transaction.create({
+      data: {
+        walletId: wallet.id,
+        userId: user.id,
+        amount: numericAmount,
+        status: Status.PENDING,
+        type: TransactionType.TOPUP,
+        reference: txRef,
+        description: "Pending card checkout top-up",
+        balanceBefore: wallet.balance,
+        balanceAfter: wallet.balance,
+        fee: 0,
+        metadata: {
+          provider: "flutterwave",
+          chargeType: "card_checkout",
+          paymentUrl: normalized.paymentUrl,
+          redirectUrl,
+          flutterwave: providerResponse as object,
+        },
+      },
+    });
+
+    return normalized;
   }
 
   public async getBankAccountDetails(
@@ -612,6 +711,17 @@ export class WalletService {
       reference: ref,
     });
 
+    void notificationService.createAndSend(wallet.userId, {
+      title: "Withdrawal initiated",
+      body: `Your withdrawal of ${numericAmount} ${wallet.currency} has been initiated.`,
+      link: "/wallet",
+      type: "WALLET_WITHDRAWAL",
+      data: {
+        type: "WALLET_WITHDRAWAL",
+        reference: ref,
+      },
+    });
+
     return {
       reference: ref,
       transfer: response.data,
@@ -641,7 +751,7 @@ export class WalletService {
       throw new AppException("Invalid top-up amount", httpStatus.BAD_REQUEST);
     }
 
-    const txRef = `${user.id}-${Date.now()}`;
+    const txRef = buildWalletTopUpReference(user.id);
     const payload = {
       amount: numericAmount,
       email: user.email,
@@ -652,7 +762,47 @@ export class WalletService {
       redirect_url: "https://recycool.com/wallet/topup-success",
     };
 
-    return this.flutterwaveClient.chargeBank(payload);
+    const providerResponse = await this.flutterwaveClient.chargeBank(payload);
+    const transferDetails = extractFlutterwaveBankTransferDetails(
+      providerResponse as FlutterwaveBankTransferResponse
+    );
+
+    const normalized = normalizeVirtualAccountTopUp(
+      txRef,
+      numericAmount,
+      "NGN",
+      transferDetails
+    );
+
+    if (!normalized.accountNumber) {
+      throw new AppException(
+        "Virtual account could not be generated. Please try again.",
+        httpStatus.BAD_GATEWAY
+      );
+    }
+
+    await prisma.transaction.create({
+      data: {
+        walletId: wallet.id,
+        userId: user.id,
+        amount: numericAmount,
+        status: Status.PENDING,
+        type: TransactionType.TOPUP,
+        reference: txRef,
+        description: "Pending NGN bank transfer top-up",
+        balanceBefore: wallet.balance,
+        balanceAfter: wallet.balance,
+        fee: 0,
+        metadata: {
+          provider: "flutterwave",
+          chargeType: "bank_transfer",
+          virtualAccount: normalized.virtualAccount,
+          flutterwave: providerResponse as object,
+        },
+      },
+    });
+
+    return normalized;
   }
 
   public async getBanksList(user: User) {

@@ -69,9 +69,14 @@ export const respondToCharityProductRequestValidator = {
     }),
   }),
   body: Joi.object().keys({
-    status: Joi.string().required().messages({
-      "any.required": "Oops!, you have to specify a status",
-    }),
+    status: Joi.string()
+      .valid("ACCEPTED", "APPROVED", "REJECTED")
+      .insensitive()
+      .required()
+      .messages({
+        "any.only": "Status must be ACCEPTED or REJECTED",
+        "any.required": "Oops!, you have to specify a status",
+      }),
   }),
 };
 

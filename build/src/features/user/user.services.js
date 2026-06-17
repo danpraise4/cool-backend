@@ -336,49 +336,90 @@ class UserService {
         }
     }
     // Notifications
-    // get notifications by id
+    async getOwnedNotification(userId, notificationId) {
+        const notification = await connect_1.default.notification.findFirst({
+            where: {
+                id: notificationId,
+                userId,
+                isDeleted: false,
+            },
+        });
+        if (!notification) {
+            throw new Error("Notification not found");
+        }
+        return notification;
+    }
     async getNotificationById(notificationId) {
         const notification = await connect_1.default.notification.findUnique({
             where: { id: notificationId },
         });
         return notification;
     }
-    async getNotifications(user) {
-        const notifications = await connect_1.default.notification.findMany({
-            where: { userId: user.id },
-            orderBy: {
-                createdAt: "desc",
+    async getNotifications(user, options) {
+        const page = Math.max(1, options?.page ?? 1);
+        const limit = Math.min(50, Math.max(1, options?.limit ?? 20));
+        const skip = (page - 1) * limit;
+        const where = {
+            userId: user.id,
+            isDeleted: false,
+            ...(options?.unreadOnly ? { isRead: false } : {}),
+        };
+        const [notifications, total, unreadCount] = await Promise.all([
+            connect_1.default.notification.findMany({
+                where,
+                orderBy: { createdAt: "desc" },
+                skip,
+                take: limit,
+            }),
+            connect_1.default.notification.count({ where }),
+            connect_1.default.notification.count({
+                where: { userId: user.id, isDeleted: false, isRead: false },
+            }),
+        ]);
+        return {
+            notifications,
+            meta: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit) || 1,
+                unreadCount,
             },
+        };
+    }
+    async getUnreadNotificationCount(userId) {
+        const unreadCount = await connect_1.default.notification.count({
+            where: { userId, isDeleted: false, isRead: false },
         });
-        return notifications;
+        return { unreadCount };
     }
     async markNotificationAsRead(user, notificationId) {
-        const _notification = await this.getNotificationById(notificationId);
-        if (!_notification) {
-            throw new Error("Notification not found");
-        }
-        if (_notification.userId !== user.id) {
-            throw Error("You don't have permission to delete this");
-        }
-        const notification = await connect_1.default.notification.update({
+        await this.getOwnedNotification(user.id, notificationId);
+        return connect_1.default.notification.update({
             where: { id: notificationId },
             data: { isRead: true },
         });
-        return notification;
     }
     async markNotificationAsUnread(user, notificationId) {
-        const _notification = await this.getNotificationById(notificationId);
-        if (!_notification) {
-            throw new Error("Notification not found");
-        }
-        if (_notification.userId !== user.id) {
-            throw Error("You don't have permission to mark this as unread");
-        }
-        const notification = await connect_1.default.notification.update({
+        await this.getOwnedNotification(user.id, notificationId);
+        return connect_1.default.notification.update({
             where: { id: notificationId },
             data: { isRead: false },
         });
-        return notification;
+    }
+    async markAllNotificationsAsRead(userId) {
+        const result = await connect_1.default.notification.updateMany({
+            where: { userId, isDeleted: false, isRead: false },
+            data: { isRead: true },
+        });
+        return { updatedCount: result.count };
+    }
+    async deleteNotification(user, notificationId) {
+        await this.getOwnedNotification(user.id, notificationId);
+        return connect_1.default.notification.update({
+            where: { id: notificationId },
+            data: { isDeleted: true, isRead: true },
+        });
     }
 }
 exports.UserService = UserService;

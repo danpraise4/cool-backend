@@ -311,6 +311,14 @@ export class AuthUserService {
         firstName: _user.firstName,
       });
 
+      void notificationService.createAndSend(_user.id, {
+        title: "Welcome to Recycool",
+        body: `Hi ${_user.firstName}, your account was created successfully.`,
+        link: "/home",
+        type: "REGISTRATION",
+        data: { type: "REGISTRATION" },
+      });
+
       return { isNewUser: true, user: _user, token: _token };
     }
 
@@ -321,6 +329,14 @@ export class AuthUserService {
 
     emailNotificationService.notifyUser(_user.id, EmailNotificationType.LOGIN, {
       firstName: _user.firstName,
+    });
+
+    void notificationService.createAndSend(_user.id, {
+      title: "Welcome back",
+      body: `Hi ${_user.firstName}, you signed in successfully.`,
+      link: "/home",
+      type: "LOGIN",
+      data: { type: "LOGIN" },
     });
 
     return {

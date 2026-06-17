@@ -16,11 +16,17 @@ export type OrderProductInput = {
   [key: string]: unknown;
 };
 
-export type EnrichedOrderProduct = Omit<OrderProductInput, "material"> & {
+export type EnrichedMarketProduct<T extends OrderProductInput = OrderProductInput> = Omit<
+  T,
+  "material"
+> & {
+  materialId: string;
   material: ResolvedMaterial;
   materialTitle: string;
   images: string[];
 };
+
+export type EnrichedOrderProduct = EnrichedMarketProduct;
 
 export function buildMaterialLabel(
   material: Partial<ResolvedMaterial> | null | undefined,
@@ -42,11 +48,11 @@ export function buildMaterialLabel(
   return { id: fallback, title: fallback, category: fallback };
 }
 
-export function enrichOrderProduct(
-  product: OrderProductInput,
+export function enrichOrderProduct<T extends OrderProductInput>(
+  product: T,
   resolvedMaterial: Partial<ResolvedMaterial> | null | undefined,
   materialTitleSnapshot?: string | null
-): EnrichedOrderProduct {
+): EnrichedMarketProduct<T> {
   const { material: materialId, ...rest } = product;
   const material = buildMaterialLabel(resolvedMaterial, materialId);
   const materialTitle =
@@ -54,6 +60,7 @@ export function enrichOrderProduct(
 
   return {
     ...rest,
+    materialId,
     images: product.images ?? [],
     material,
     materialTitle,
@@ -72,7 +79,10 @@ export function assertOrderProductPresent(
   }
 }
 
-export function hasMaterialLabel(product: EnrichedOrderProduct): boolean {
+export function hasMaterialLabel(product: {
+  materialTitle?: string;
+  material?: Partial<ResolvedMaterial>;
+}): boolean {
   const materialTitle = product.materialTitle?.trim();
   const relationTitle = product.material?.title?.trim();
   const relationCategory = product.material?.category?.trim();

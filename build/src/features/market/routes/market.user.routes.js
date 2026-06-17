@@ -35,10 +35,10 @@ router
 router
     .route("/i")
     .get(auth_user_middleware_1.isUserAuthenticated, controller_module_1.marketUserController.getUserProducts);
-// Get charity product requests for auth user
+// Get charity history (donated + received)
 router
     .route("/i/charity/history")
-    .get(auth_user_middleware_1.isUserAuthenticated, controller_module_1.marketUserController.getCharityProducts);
+    .get(auth_user_middleware_1.isUserAuthenticated, controller_module_1.marketUserController.getCharityHistory);
 // Get charity product requests for auth user
 router
     .route("/i/charity/requests")

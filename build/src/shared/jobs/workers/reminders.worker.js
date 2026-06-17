@@ -7,7 +7,7 @@ exports.remindersWorker = void 0;
 const bullmq_1 = require("bullmq");
 const catch_1 = require("../utils/catch");
 const connect_1 = __importDefault(require("../../../infastructure/database/postgreSQL/connect"));
-const notification_service_1 = __importDefault(require("../../services/notification/notification.service"));
+const notification_service_1 = require("../../services/notification/notification.service");
 const reminder_cron_1 = require("../cron/reminder.cron");
 const app_constants_1 = require("../../config/app.constants");
 const logger_1 = __importDefault(require("../../services/logger"));
@@ -29,10 +29,6 @@ exports.remindersWorker = new bullmq_1.Worker("reminders", async (job) => {
                 logger_1.default.warn({ reminderId }, "reminder not found");
                 return;
             }
-            if (!reminder.user.settings?.isPushNotificationsEnabled)
-                return;
-            if (!reminder.user.deviceToken)
-                return;
             const scheduleDate = reminder.schedule.dates[0];
             const isDayBefore = reminder.remindAt &&
                 scheduleDate &&
@@ -41,17 +37,15 @@ exports.remindersWorker = new bullmq_1.Worker("reminders", async (job) => {
             const body = isDayBefore
                 ? `Don't forget! You have a recycling appointment tomorrow at ${reminder.schedule.facility}`
                 : `Your recycling appointment is today at ${reminder.schedule.facility}`;
-            await notification_service_1.default.getInstance().emitNotificationToClient(reminder.userId, { title, body }, {
-                type: "recycle_reminder",
-                scheduleId: reminder.scheduleId,
-                reminderId: reminder.id,
-            });
-            await connect_1.default.notification.create({
+            await notification_service_1.notificationService.createAndSend(reminder.userId, {
+                title,
+                body,
+                link: `/recycle/schedule/${reminder.scheduleId}`,
+                type: "RECYCLE_REMINDER",
                 data: {
-                    userId: reminder.userId,
-                    title,
-                    body,
-                    link: `/recycle/schedule/${reminder.scheduleId}`,
+                    type: "RECYCLE_REMINDER",
+                    scheduleId: reminder.scheduleId,
+                    reminderId: reminder.id,
                 },
             });
             await connect_1.default.recycleReminder.update({

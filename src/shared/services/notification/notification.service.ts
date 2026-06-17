@@ -53,11 +53,12 @@ export default class PushService {
   }
 }
 
-type NotificationPayload = {
+export type NotificationPayload = {
   title: string;
   body: string;
   image?: string;
   link?: string;
+  type?: string;
   data?: Record<string, string>;
 };
 
@@ -75,6 +76,8 @@ export class NotificationService {
 
       if (!user) return;
 
+      const notificationType = payload.type ?? payload.data?.type;
+
       await prismaClient.notification.create({
         data: {
           userId,
@@ -82,6 +85,8 @@ export class NotificationService {
           body: payload.body,
           image: payload.image,
           link: payload.link,
+          type: notificationType,
+          metadata: payload.data ? (payload.data as object) : undefined,
         },
       });
 

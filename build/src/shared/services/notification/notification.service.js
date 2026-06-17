@@ -59,6 +59,7 @@ class NotificationService {
             });
             if (!user)
                 return;
+            const notificationType = payload.type ?? payload.data?.type;
             await connect_1.default.notification.create({
                 data: {
                     userId,
@@ -66,6 +67,8 @@ class NotificationService {
                     body: payload.body,
                     image: payload.image,
                     link: payload.link,
+                    type: notificationType,
+                    metadata: payload.data ? payload.data : undefined,
                 },
             });
             if (user.settings?.isPushNotificationsEnabled === false) {

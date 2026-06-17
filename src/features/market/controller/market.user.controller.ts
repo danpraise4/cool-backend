@@ -40,14 +40,32 @@ export class MarketController {
     }
   };
 
+  getCharityHistory = async (req: RequestType, res: Response, next: NextFunction) => {
+    try {
+      const scope = (req.query.scope as string | undefined) ?? "all";
+      const result = await this.marketUserService.getCharityHistory(req.user.id, scope);
+      return res.status(httpStatus.OK).json({
+        status: "success",
+        message: "Charity history fetched successfully",
+        data: result,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  };
+
   getCharityProducts = async (req: RequestType, res: Response, next: NextFunction) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
 
       if (req.query.type === "history") {
-        const result = await this.marketUserService.getCharityProductsHistory(req.user.id, page, limit);
-        return res.status(httpStatus.OK).json({ status: "success", message: "Charity products fetched successfully", data: result });
+        const result = await this.marketUserService.getCharityHistory(req.user.id, "all");
+        return res.status(httpStatus.OK).json({
+          status: "success",
+          message: "Charity history fetched successfully",
+          data: result,
+        });
       }
 
       const result = await this.marketUserService.getUserProducts(req.user.id, page, limit, ProductType.CHARITY_PRODUCT, "isNotSold");

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updatePasswordValidator = exports.emailValidator = exports.completeRegistrationValidator = exports.verifyOtpValidator = exports.transferToBankValidator = exports.resolveBankAccountValidator = exports.creditUserWalletValidator = exports.registerValidator = exports.loginValidator = void 0;
+exports.updatePasswordValidator = exports.emailValidator = exports.completeRegistrationValidator = exports.verifyOtpValidator = exports.transferToBankValidator = exports.createCardChargeUrlValidator = exports.topupBankValidator = exports.resolveBankAccountValidator = exports.creditUserWalletValidator = exports.registerValidator = exports.loginValidator = void 0;
 const joi_1 = __importDefault(require("joi"));
 exports.loginValidator = {
     body: joi_1.default.object().keys({
@@ -62,6 +62,28 @@ exports.resolveBankAccountValidator = {
             .messages({
             "any.required": "Bank code is required",
             "string.pattern.base": "Bank code must be a numeric Flutterwave bank code",
+        }),
+    }),
+};
+exports.topupBankValidator = {
+    body: joi_1.default.object().keys({
+        amount: joi_1.default.alternatives()
+            .try(joi_1.default.number().positive(), joi_1.default.string().pattern(/^\d+(\.\d{1,2})?$/))
+            .required()
+            .messages({
+            "any.required": "Top-up amount is required",
+            "alternatives.match": "Amount must be a positive number",
+        }),
+    }),
+};
+exports.createCardChargeUrlValidator = {
+    body: joi_1.default.object().keys({
+        amount: joi_1.default.alternatives()
+            .try(joi_1.default.number().positive(), joi_1.default.string().pattern(/^\d+(\.\d{1,2})?$/))
+            .required()
+            .messages({
+            "any.required": "Top-up amount is required",
+            "alternatives.match": "Amount must be greater than zero",
         }),
     }),
 };

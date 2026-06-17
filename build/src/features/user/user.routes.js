@@ -32,11 +32,20 @@ router.route("/delete").delete(auth_user_middleware_1.isUserAuthenticated, contr
 // Notifications
 router
     .route("/get-notifications")
-    .get(auth_user_middleware_1.isUserAuthenticated, controller_module_1.userController.getNotifications);
+    .get(auth_user_middleware_1.isUserAuthenticated, (0, app_validate_1.default)(user_validator_1.getNotificationsQueryValidator), controller_module_1.userController.getNotifications);
+router
+    .route("/notifications/unread-count")
+    .get(auth_user_middleware_1.isUserAuthenticated, controller_module_1.userController.getUnreadNotificationCount);
+router
+    .route("/mark-all-notifications-as-read")
+    .patch(auth_user_middleware_1.isUserAuthenticated, controller_module_1.userController.markAllNotificationsAsRead);
 router
     .route("/mark-notification-as-read/:id")
-    .patch(auth_user_middleware_1.isUserAuthenticated, controller_module_1.userController.markNotificationAsRead);
+    .patch(auth_user_middleware_1.isUserAuthenticated, (0, app_validate_1.default)(user_validator_1.notificationIdParamValidator), controller_module_1.userController.markNotificationAsRead);
 router
     .route("/mark-notification-as-unread/:id")
-    .patch(auth_user_middleware_1.isUserAuthenticated, controller_module_1.userController.markNotificationAsUnread);
+    .patch(auth_user_middleware_1.isUserAuthenticated, (0, app_validate_1.default)(user_validator_1.notificationIdParamValidator), controller_module_1.userController.markNotificationAsUnread);
+router
+    .route("/delete-notification/:id")
+    .delete(auth_user_middleware_1.isUserAuthenticated, (0, app_validate_1.default)(user_validator_1.notificationIdParamValidator), controller_module_1.userController.deleteNotification);
 exports.default = router;

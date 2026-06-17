@@ -27,6 +27,11 @@ import {
   mapAdminMaterialPayload,
   ResolvedMaterial,
 } from "../market.order.utils";
+import {
+  mapCharityHistoryItem,
+  parseCharityHistoryScope,
+  sortCharityHistoryItems,
+} from "../market.charity.utils";
 
 class MarketUserService {
   private readonly materialService: MaterialsService;
@@ -69,6 +74,17 @@ class MarketUserService {
     emailNotificationService.notifyUser(user.id, EmailNotificationType.PRODUCT_UPLOADED, {
       firstName: user.firstName,
       productTitle: product.title,
+    });
+
+    void notificationService.createAndSend(user.id, {
+      title: "Product listed",
+      body: `Your product "${product.title}" was uploaded successfully.`,
+      link: "/market",
+      type: "PRODUCT_UPLOADED",
+      data: {
+        type: "PRODUCT_UPLOADED",
+        productId: product.id,
+      },
     });
 
     return product;
@@ -195,7 +211,15 @@ class MarketUserService {
       where: { id: productId },
       include: {
         createdBy: {
-          select: { id: true, firstName: true, lastName: true, image: true, phone: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            image: true,
+            phone: true,
+            address: true,
+            city: true,
+          },
         },
         soldTo: {
           select: { id: true, firstName: true, lastName: true, image: true },
@@ -207,8 +231,8 @@ class MarketUserService {
       throw new AppException("Product not found", httpStatus.NOT_FOUND);
     }
 
-    const material = await this.materialService.getMaterialsById(product.material);
-    return { ...product, material: material.payload };
+    const resolvedMaterial = await this.resolveMaterialById(product.material);
+    return enrichOrderProduct(product, resolvedMaterial);
   }
 
   async getOrderById(orderId: string) {
@@ -330,7 +354,7 @@ class MarketUserService {
   }
 
   async markAsSold(productId: string, buyerId: string): Promise<Product> {
-    return prisma.product.update({
+    const product = await prisma.product.update({
       where: { id: productId },
       data: {
         isSold: true,
@@ -339,6 +363,13 @@ class MarketUserService {
         status: Status.COMPLETED,
       },
     });
+
+    await this.removeProductFromAllCarts(productId);
+    return product;
+  }
+
+  private async removeProductFromAllCarts(productId: string): Promise<void> {
+    await prisma.chartProduct.deleteMany({ where: { productId } });
   }
 
   async requestCharityProduct(productId: string, userId: string) {
@@ -384,6 +415,18 @@ class MarketUserService {
         : "A user",
     });
 
+    void notificationService.createAndSend(product.userId, {
+      title: "Charity request received",
+      body: `${requester ? `${requester.firstName} ${requester.lastName}`.trim() : "Someone"} requested your charity item "${product.title}".`,
+      link: "/market/charity",
+      type: "CHARITY_REQUEST_RECEIVED",
+      data: {
+        type: "CHARITY_REQUEST_RECEIVED",
+        productId,
+        requestId: request.id,
+      },
+    });
+
     return request;
   }
 
@@ -409,39 +452,134 @@ class MarketUserService {
 
     if (existing) {
       await prisma.chartProduct.delete({ where: { id: existing.id } });
-      return { message: "Product removed from cart" };
+      return {
+        message: "Product removed from cart",
+        inCart: false,
+        productId,
+      };
     }
 
-    await prisma.chartProduct.create({ data: { productId, userId } });
-    return { message: "Product added to cart" };
+    const cartItem = await prisma.chartProduct.create({
+      data: { productId, userId },
+      select: { id: true, createdAt: true },
+    });
+
+    return {
+      message: "Product added to cart",
+      inCart: true,
+      id: cartItem.id,
+      createdAt: cartItem.createdAt,
+      productId,
+      product,
+    };
+  }
+
+  private cartProductSelect() {
+    return {
+      id: true,
+      title: true,
+      description: true,
+      price: true,
+      currency: true,
+      images: true,
+      material: true,
+      createdBy: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          image: true,
+          phone: true,
+          address: true,
+          city: true,
+        },
+      },
+    };
+  }
+
+  private mapCartItems<
+    T extends {
+      id: string;
+      createdAt: Date;
+      product: {
+        id: string;
+        title: string;
+        material: string;
+        images?: string[] | null;
+        [key: string]: unknown;
+      } | null;
+    },
+  >(items: T[], materialMap: Map<string, ResolvedMaterial | null>) {
+    return items.map((item) => {
+      if (!item.product) {
+        throw new AppException(
+          `Cart item ${item.id} is missing product data`,
+          httpStatus.INTERNAL_SERVER_ERROR
+        );
+      }
+
+      return {
+        id: item.id,
+        createdAt: item.createdAt,
+        product: enrichOrderProduct(
+          item.product,
+          materialMap.get(item.product.material) ?? null
+        ),
+      };
+    });
   }
 
   async getUserCart(userId: string) {
-    return prisma.chartProduct.findMany({
+    const cartItems = await prisma.chartProduct.findMany({
       where: { userId },
       select: {
+        id: true,
+        createdAt: true,
         product: {
-          select: {
-            id: true,
-            title: true,
-            images: true,
-            description: true,
-            price: true,
-            material: true,
-            createdBy: {
-              select: { id: true, firstName: true, lastName: true, image: true, phone: true },
-            },
-          },
+          select: this.cartProductSelect(),
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const materialMap = await this.resolveMaterialsByIds(
+      cartItems
+        .map((item) => item.product?.material)
+        .filter((id): id is string => Boolean(id))
+    );
+
+    return this.mapCartItems(cartItems, materialMap);
+  }
+
+  async checkIfProductInCart(productId: string, userId: string) {
+    const item = await prisma.chartProduct.findFirst({
+      where: { productId, userId },
+      select: {
+        id: true,
+        createdAt: true,
+        product: {
+          select: this.cartProductSelect(),
         },
       },
     });
-  }
 
-  async checkIfProductInCart(productId: string, userId: string): Promise<boolean> {
-    const item = await prisma.chartProduct.findFirst({
-      where: { productId, userId },
-    });
-    return !!item;
+    if (!item) {
+      return { inCart: false, productId };
+    }
+
+    const materialMap = await this.resolveMaterialsByIds(
+      item.product?.material ? [item.product.material] : []
+    );
+
+    const [mapped] = this.mapCartItems([item], materialMap);
+
+    return {
+      inCart: true,
+      productId: mapped.product.id,
+      id: mapped.id,
+      createdAt: mapped.createdAt,
+      product: mapped.product,
+    };
   }
 
   async getProductRequests(requestId: string) {
@@ -456,27 +594,80 @@ class MarketUserService {
     return request;
   }
 
-  async getCharityProductsHistory(userId: string, page = 1, limit = 10) {
-    const skip = (page - 1) * limit;
-    const where = {
+  async getCharityHistory(userId: string, scopeInput?: string) {
+    const scope = parseCharityHistoryScope(scopeInput);
+    const completedCharityWhere = {
       type: ProductType.CHARITY_PRODUCT,
-      createdBy: { id: userId },
       isSold: true,
-      status: Status.COMPLETED,
+      status: Status.APPROVED,
+      charityProductRequest: { some: { status: Status.APPROVED } },
     };
 
-    const [products, total] = await Promise.all([
-      prisma.product.findMany({ where, skip, take: limit, orderBy: { createdAt: "desc" } }),
-      prisma.product.count({ where }),
+    const productInclude = {
+      createdBy: {
+        select: { id: true, firstName: true, lastName: true, image: true },
+      },
+      soldTo: {
+        select: { id: true, firstName: true, lastName: true, image: true },
+      },
+    };
+
+    const [donatedProducts, receivedProducts] = await Promise.all([
+      scope === "received"
+        ? Promise.resolve([])
+        : prisma.product.findMany({
+            where: { ...completedCharityWhere, userId },
+            include: productInclude,
+          }),
+      scope === "donated"
+        ? Promise.resolve([])
+        : prisma.product.findMany({
+            where: { ...completedCharityWhere, soldToId: userId },
+            include: productInclude,
+          }),
     ]);
+
+    const materialMap = await this.resolveMaterialsByIds(
+      [...donatedProducts, ...receivedProducts]
+        .map((product) => product.material)
+        .filter(Boolean)
+    );
+
+    const donated = sortCharityHistoryItems(
+      donatedProducts.map((product) =>
+        mapCharityHistoryItem(
+          product,
+          "DONATED",
+          materialMap.get(product.material) ?? null
+        )
+      )
+    );
+
+    const received = sortCharityHistoryItems(
+      receivedProducts.map((product) =>
+        mapCharityHistoryItem(
+          product,
+          "RECEIVED",
+          materialMap.get(product.material) ?? null
+        )
+      )
+    );
+
+    return { donated, received };
+  }
+
+  /** @deprecated Use getCharityHistory instead */
+  async getCharityProductsHistory(userId: string, page = 1, limit = 10) {
+    const history = await this.getCharityHistory(userId, "donated");
+    const products = history.donated.slice((page - 1) * limit, page * limit);
 
     return {
       products,
       meta: {
         currentPage: page,
         pageSize: limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        total: history.donated.length,
+        totalPages: Math.ceil(history.donated.length / limit),
       },
     };
   }
@@ -512,8 +703,9 @@ class MarketUserService {
   async approveCharityProductRequest(
     requestId: string,
     userId: string,
-    status: "APPROVED" | "REJECTED"
+    status: string
   ) {
+    const normalizedStatus = this.normalizeCharityRequestStatus(status);
     const request = await this.getProductRequests(requestId);
     const product = await this.getProductById(request.productId);
 
@@ -538,34 +730,79 @@ class MarketUserService {
       throw new AppException("Product is not a charity product", httpStatus.BAD_REQUEST);
     }
 
-    if (status === "APPROVED") {
-      await prisma.product.update({
-        where: { id: product.id },
-        data: {
-          status: Status.APPROVED,
-          isSold: true,
-          soldAt: new Date(),
-          soldToId: request.userId,
-        },
-      });
+    if (normalizedStatus === Status.APPROVED) {
+      await prisma.$transaction([
+        prisma.product.update({
+          where: { id: product.id },
+          data: {
+            status: Status.APPROVED,
+            isSold: true,
+            soldAt: new Date(),
+            confirmedAt: new Date(),
+            soldToId: request.userId,
+          },
+        }),
+        prisma.chartProduct.deleteMany({ where: { productId: product.id } }),
+      ]);
 
       emailNotificationService.notifyUser(
         request.userId,
         EmailNotificationType.CHARITY_REQUEST_ACCEPTED,
         { productTitle: product.title }
       );
-    } else if (status === "REJECTED") {
+
+      void notificationService.createAndSend(request.userId, {
+        title: "Charity request accepted",
+        body: `Your request for "${product.title}" was accepted.`,
+        link: "/market/charity",
+        type: "CHARITY_REQUEST_ACCEPTED",
+        data: {
+          type: "CHARITY_REQUEST_ACCEPTED",
+          productId: product.id,
+          requestId,
+        },
+      });
+    } else if (normalizedStatus === Status.REJECTED) {
       emailNotificationService.notifyUser(
         request.userId,
         EmailNotificationType.CHARITY_REQUEST_REJECTED,
         { productTitle: product.title }
       );
+
+      void notificationService.createAndSend(request.userId, {
+        title: "Charity request declined",
+        body: `Your request for "${product.title}" was declined.`,
+        link: "/market/charity",
+        type: "CHARITY_REQUEST_REJECTED",
+        data: {
+          type: "CHARITY_REQUEST_REJECTED",
+          productId: product.id,
+          requestId,
+        },
+      });
     }
 
     return prisma.charityProductRequest.update({
       where: { id: requestId },
-      data: { status },
+      data: { status: normalizedStatus },
     });
+  }
+
+  private normalizeCharityRequestStatus(status: string): Status {
+    const value = status.trim().toUpperCase();
+
+    if (value === "ACCEPTED" || value === "APPROVED") {
+      return Status.APPROVED;
+    }
+
+    if (value === "REJECTED") {
+      return Status.REJECTED;
+    }
+
+    throw new AppException(
+      "Invalid status. Use ACCEPTED or REJECTED",
+      httpStatus.BAD_REQUEST
+    );
   }
 
   async getCharityProductRequests(userId: string) {
@@ -737,6 +974,10 @@ class MarketUserService {
       await tx.product.update({
         where: { id: order.product.id },
         data: { isSold: true, soldAt: new Date(), soldToId: userId },
+      });
+
+      await tx.chartProduct.deleteMany({
+        where: { productId: order.product.id },
       });
 
       return updated;
