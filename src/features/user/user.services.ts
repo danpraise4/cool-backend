@@ -12,6 +12,7 @@ import {
   EmailNotificationType,
 } from "../../shared/services/email/email-notification.service";
 import { notificationService } from "../../shared/services/notification/notification.service";
+import { enrichProductListing, enrichUserWithRating } from "./rating.service";
 
 export class UserService {
   AdminClient: AdminService;
@@ -31,10 +32,7 @@ export class UserService {
     }
 
     const { password, ...safeUser } = user;
-    return {
-      ...safeUser,
-      rating: Number((user.averageRating ?? 0).toFixed(1)),
-    };
+    return enrichUserWithRating(safeUser);
   }
 
   public async getUserByEmail(email: string) {
@@ -250,6 +248,8 @@ export class UserService {
               image: true,
               id: true,
               phone: true,
+              averageRating: true,
+              ratingCount: true,
             },
           },
         },
@@ -277,11 +277,11 @@ export class UserService {
             charity.createdBy.longitude
           );
         }
-        return {
+        return enrichProductListing({
           ...charity,
           material: materials[index].payload,
           distanceInMiles: distance,
-        };
+        });
       });
 
       // Sort by distance, with closest items first (null distances at the end)
@@ -368,6 +368,8 @@ export class UserService {
               image: true,
               phone: true,
               id: true,
+              averageRating: true,
+              ratingCount: true,
             },
           },
         },
@@ -397,12 +399,11 @@ export class UserService {
             deal.createdBy.longitude
           );
         }
-        return {
+        return enrichProductListing({
           ...deal,
-
           material: materials[index].payload,
           distanceInMiles: distance,
-        };
+        });
       });
 
       // Sort by distance, with closest items first (null distances at the end)

@@ -27,7 +27,12 @@ import {
   mapAdminMaterialPayload,
   ResolvedMaterial,
 } from "../market.order.utils";
-import { formatUserRating } from "../../user/rating.service";
+import {
+  createdByWithRatingSelect,
+  enrichProductListing,
+  enrichUserWithRating,
+  formatUserRating,
+} from "../../user/rating.service";
 import {
   mapCharityHistoryItem,
   parseCharityHistoryScope,
@@ -104,7 +109,7 @@ class MarketUserService {
         where,
         include: {
           createdBy: {
-            select: { id: true, firstName: true, lastName: true, image: true, phone: true },
+            select: createdByWithRatingSelect,
           },
         },
         skip,
@@ -119,7 +124,9 @@ class MarketUserService {
     );
 
     return {
-      products: products.map((p, i) => ({ ...p, material: materials[i].payload })),
+      products: products.map((p, i) =>
+        enrichProductListing({ ...p, material: materials[i].payload })
+      ),
       meta: {
         currentPage: page,
         pageSize: limit,
@@ -182,7 +189,7 @@ class MarketUserService {
         where,
         include: {
           createdBy: {
-            select: { id: true, firstName: true, lastName: true, image: true, phone: true },
+            select: createdByWithRatingSelect,
           },
         },
         skip,
@@ -197,7 +204,9 @@ class MarketUserService {
     );
 
     return {
-      products: products.map((p, i) => ({ ...p, material: materials[i].payload })),
+      products: products.map((p, i) =>
+        enrichProductListing({ ...p, material: materials[i].payload })
+      ),
       meta: {
         currentPage: page,
         pageSize: limit,
@@ -239,12 +248,7 @@ class MarketUserService {
 
     return {
       ...enriched,
-      createdBy: product.createdBy
-        ? {
-            ...product.createdBy,
-            ...formatUserRating(product.createdBy),
-          }
-        : null,
+      ...enrichProductListing(enriched),
     };
   }
 
@@ -498,11 +502,7 @@ class MarketUserService {
       material: true,
       createdBy: {
         select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          image: true,
-          phone: true,
+          ...createdByWithRatingSelect,
           address: true,
           city: true,
         },
@@ -531,13 +531,15 @@ class MarketUserService {
         );
       }
 
+      const enrichedProduct = enrichOrderProduct(
+        item.product,
+        materialMap.get(item.product.material) ?? null
+      );
+
       return {
         id: item.id,
         createdAt: item.createdAt,
-        product: enrichOrderProduct(
-          item.product,
-          materialMap.get(item.product.material) ?? null
-        ),
+        product: enrichProductListing(enrichedProduct),
       };
     });
   }
@@ -618,7 +620,7 @@ class MarketUserService {
 
     const productInclude = {
       createdBy: {
-        select: { id: true, firstName: true, lastName: true, image: true },
+        select: createdByWithRatingSelect,
       },
       soldTo: {
         select: { id: true, firstName: true, lastName: true, image: true },
@@ -701,14 +703,7 @@ class MarketUserService {
         orderBy: { createdAt: "desc" },
         include: {
           createdBy: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              image: true,
-              averageRating: true,
-              ratingCount: true,
-            },
+            select: createdByWithRatingSelect,
           },
         },
       }),
@@ -716,15 +711,7 @@ class MarketUserService {
     ]);
 
     return {
-      products: products.map((product) => ({
-        ...product,
-        createdBy: product.createdBy
-          ? {
-              ...product.createdBy,
-              ...formatUserRating(product.createdBy),
-            }
-          : null,
-      })),
+      products: products.map((product) => enrichProductListing(product)),
       meta: {
         currentPage: page,
         pageSize: limit,
@@ -859,7 +846,7 @@ class MarketUserService {
             userId: true,
             productId: true,
             createdBy: {
-              select: { id: true, firstName: true, lastName: true, image: true, phone: true },
+              select: createdByWithRatingSelect,
             },
           },
         },
@@ -876,7 +863,12 @@ class MarketUserService {
         status: product.status,
         createdAt: product.createdAt,
       },
-      requests: product.charityProductRequest,
+      requests: product.charityProductRequest.map((request) => ({
+        ...request,
+        createdBy: request.createdBy
+          ? enrichUserWithRating(request.createdBy)
+          : request.createdBy,
+      })),
     }));
   }
 
@@ -1147,6 +1139,15 @@ class MarketUserService {
       orders.map((order) => order.product?.material).filter((id): id is string => Boolean(id))
     );
 
+    const existingRatings = await prisma.userRating.findMany({
+      where: {
+        reviewerId: userId,
+        contextType: "order",
+        contextId: { in: orders.map((order) => order.id) },
+      },
+    });
+    const ratingByOrderId = new Map(existingRatings.map((rating) => [rating.contextId, rating]));
+
     return orders.map((order) => {
       assertOrderProductPresent(order.product, order.id);
       const resolvedMaterial = materialMap.get(order.product.material) ?? null;
@@ -1154,23 +1155,22 @@ class MarketUserService {
       const sellerRating = formatUserRating(seller);
       const enrichedProduct = enrichOrderProduct(order.product, resolvedMaterial);
       const sellerName = `${seller.firstName} ${seller.lastName}`.trim();
+      const userRatingRow = ratingByOrderId.get(order.id);
 
       return {
         ...order,
         sellerId: seller.id,
         soldBy: sellerName,
-        createdBy: {
-          ...seller,
-          ...sellerRating,
-        },
-        product: {
+        rating: sellerRating.rating,
+        sellerRating: sellerRating.rating,
+        hasRated: Boolean(userRatingRow),
+        userRating: userRatingRow?.rating ?? null,
+        createdBy: enrichUserWithRating(seller),
+        product: enrichProductListing({
           ...enrichedProduct,
           userId: seller.id,
-          createdBy: {
-            ...seller,
-            ...sellerRating,
-          },
-        },
+          createdBy: seller,
+        }),
       };
     });
   }

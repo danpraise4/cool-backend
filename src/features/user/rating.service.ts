@@ -17,12 +17,66 @@ export function formatUserRating(user: {
   ratingCount?: number | null;
 }) {
   const averageRating = Number((user.averageRating ?? 0).toFixed(1));
+  const ratingCount = user.ratingCount ?? 0;
   return {
     rating: averageRating,
     averageRating,
-    ratingCount: user.ratingCount ?? 0,
+    ratingCount,
+    reviewCount: ratingCount,
   };
 }
+
+export function enrichUserWithRating<
+  T extends { averageRating?: number | null; ratingCount?: number | null },
+>(user: T) {
+  const ratingFields = formatUserRating(user);
+  return {
+    ...user,
+    ...ratingFields,
+  };
+}
+
+type RateableUser = {
+  averageRating?: number | null;
+  ratingCount?: number | null;
+};
+
+type RateableProduct = {
+  createdBy?: RateableUser | null;
+};
+
+export function enrichProductListing<T extends object>(
+  product: T
+): T & { rating: number; sellerRating: number } {
+  const createdBy = (product as RateableProduct).createdBy;
+
+  if (!createdBy) {
+    return {
+      ...product,
+      rating: 0,
+      sellerRating: 0,
+    };
+  }
+
+  const ratedCreatedBy = enrichUserWithRating(createdBy);
+
+  return {
+    ...product,
+    createdBy: ratedCreatedBy,
+    rating: ratedCreatedBy.rating,
+    sellerRating: ratedCreatedBy.rating,
+  };
+}
+
+export const createdByWithRatingSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  image: true,
+  phone: true,
+  averageRating: true,
+  ratingCount: true,
+} as const;
 
 export async function recomputeUserAverageRating(targetUserId: string) {
   const aggregate = await prismaClient.userRating.aggregate({
@@ -78,11 +132,12 @@ export class RatingService {
       },
     });
 
-    const { averageRating } = await recomputeUserAverageRating(input.targetUserId);
+    const { averageRating, ratingCount } = await recomputeUserAverageRating(input.targetUserId);
 
     return {
       rating: input.rating,
       averageRating,
+      reviewCount: ratingCount,
     };
   }
 

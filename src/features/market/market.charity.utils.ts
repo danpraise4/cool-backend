@@ -1,4 +1,5 @@
 import { ResolvedMaterial, enrichOrderProduct } from "./market.order.utils";
+import { enrichUserWithRating } from "../user/rating.service";
 
 export type CharityHistoryRole = "DONATED" | "RECEIVED";
 
@@ -7,6 +8,10 @@ export type CharityHistoryUser = {
   firstName: string;
   lastName: string;
   image: string | null;
+  averageRating?: number | null;
+  ratingCount?: number | null;
+  rating?: number;
+  reviewCount?: number;
 };
 
 export type CharityHistoryItem = {
@@ -78,8 +83,8 @@ export function mapCharityHistoryItem(
     materialTitle: enriched.materialTitle,
     material: enriched.material,
     historyRole,
-    createdBy: product.createdBy,
-    receivedBy: product.soldTo,
+    createdBy: enrichUserWithRating(product.createdBy),
+    receivedBy: product.soldTo ? enrichUserWithRating(product.soldTo) : null,
   };
 }
 

@@ -3,6 +3,7 @@ import { AzureBlobService } from "../../shared/services/azure/blobstorage.servic
 
 import { ICommunityCreatePost } from "./community.intercase";
 import { Post, Status, User } from "@prisma/client";
+import { enrichUserWithRating } from "../user/rating.service";
 
 import { v4 } from "uuid";
 import { BlobResponse } from "../../shared/services/azure/blobstorage.model";
@@ -12,7 +13,14 @@ export class CommunityService {
 
   private formatPostForFeed(
     post: Post & {
-      user: { id: string; firstName: string; lastName: string; image: string | null };
+      user: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        image: string | null;
+        averageRating?: number | null;
+        ratingCount?: number | null;
+      };
       _count: { comments: number; likes: number; bookmarks: number };
       likes: { id: string }[];
       bookmarks: { id: string }[];
@@ -21,6 +29,7 @@ export class CommunityService {
   ) {
     return {
       ...post,
+      user: enrichUserWithRating(post.user),
       isLiked: post.likes.length > 0,
       isBookmarked: forceBookmarked || post.bookmarks.length > 0,
       commentsCount: post._count.comments,
@@ -110,6 +119,8 @@ export class CommunityService {
             firstName: true,
             lastName: true,
             image: true,
+            averageRating: true,
+            ratingCount: true,
           },
         },
         _count: {
@@ -173,6 +184,8 @@ export class CommunityService {
                   firstName: true,
                   lastName: true,
                   image: true,
+                  averageRating: true,
+                  ratingCount: true,
                 },
               },
               _count: {
