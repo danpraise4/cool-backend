@@ -146,13 +146,35 @@ export class RecycleController {
   };
 
   public getUserRecyclingAnalytics = async (req: RequestType, res: Response, next: NextFunction) => {
-    const { start, end } = req.query;
+    const { start, end, year } = req.query;
     try {
       const targetUserId = await resolveRecycleTargetUserId(req);
-      const userAnalytics = await this.recycleService.getUserRecyclingAnalytics(targetUserId, {
-        start: start ? new Date(start as string) : undefined,
-        end: end ? new Date(end as string) : undefined,
-      });
+
+      let timeRange: { start?: Date; end?: Date } | undefined;
+      if (year) {
+        const yearNum = Number(year);
+        if (!Number.isInteger(yearNum) || yearNum < 2000 || yearNum > 2100) {
+          res.status(StatusCodes.BAD_REQUEST).json({
+            status: "error",
+            message: "Invalid year parameter",
+          });
+          return;
+        }
+        timeRange = {
+          start: new Date(Date.UTC(yearNum, 0, 1, 0, 0, 0, 0)),
+          end: new Date(Date.UTC(yearNum, 11, 31, 23, 59, 59, 999)),
+        };
+      } else if (start || end) {
+        timeRange = {
+          start: start ? new Date(start as string) : undefined,
+          end: end ? new Date(end as string) : undefined,
+        };
+      }
+
+      const userAnalytics = await this.recycleService.getUserRecyclingAnalytics(
+        targetUserId,
+        timeRange
+      );
       res.status(StatusCodes.OK).json({
         status: "success",
         message: "User recycling analytics fetched successfully",

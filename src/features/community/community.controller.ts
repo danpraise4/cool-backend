@@ -21,8 +21,32 @@ export class CommunityController {
 
   public getPosts = async (req: RequestType, res: Response, next: NextFunction) => {
     try {
-      const posts = await this.communityService.getPosts(req.user.id, 1, 10);
+      const page = req.query.page ? Number(req.query.page) : 1;
+      const pageSize = req.query.pageSize ? Number(req.query.pageSize) : 10;
+      const posts = await this.communityService.getPosts(req.user.id, page, pageSize);
       res.status(StatusCodes.OK).json({ message: "Posts fetched successfully", data: posts });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getBookmarkedPosts = async (
+    req: RequestType,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const page = req.query.page ? Number(req.query.page) : 1;
+      const pageSize = req.query.pageSize ? Number(req.query.pageSize) : 20;
+      const data = await this.communityService.getBookmarkedPosts(
+        req.user.id,
+        page,
+        pageSize
+      );
+      res.status(StatusCodes.OK).json({
+        message: "Bookmarks fetched",
+        data,
+      });
     } catch (error) {
       next(error);
     }

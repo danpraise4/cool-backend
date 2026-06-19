@@ -4,9 +4,36 @@ import httpStatus from "http-status";
 import { RequestType } from "../../shared/helper/helper";
 import { sendSuccess } from "../../shared/helper/response";
 import pick from "../../shared/helper/pick";
+import { ratingService } from "./rating.service";
 
 export class UserController {
   constructor(private readonly userService: UserService) {}
+
+  public submitRating = async (
+    req: RequestType,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const data = await ratingService.submitRating({
+        reviewerId: req.user.id,
+        targetUserId: req.body.targetUserId,
+        rating: req.body.rating,
+        review: req.body.review,
+        contextType: req.body.contextType,
+        contextId: req.body.contextId,
+      });
+
+      res.status(httpStatus.OK).json({
+        success: true,
+        status: "success",
+        message: "Rating submitted",
+        data,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 
   public getUser = async (req: RequestType, res: Response, next: NextFunction) => {
     try {

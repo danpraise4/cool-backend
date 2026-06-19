@@ -27,6 +27,7 @@ import {
   mapAdminMaterialPayload,
   ResolvedMaterial,
 } from "../market.order.utils";
+import { formatUserRating } from "../../user/rating.service";
 import {
   mapCharityHistoryItem,
   parseCharityHistoryScope,
@@ -219,6 +220,8 @@ class MarketUserService {
             phone: true,
             address: true,
             city: true,
+            averageRating: true,
+            ratingCount: true,
           },
         },
         soldTo: {
@@ -232,7 +235,17 @@ class MarketUserService {
     }
 
     const resolvedMaterial = await this.resolveMaterialById(product.material);
-    return enrichOrderProduct(product, resolvedMaterial);
+    const enriched = enrichOrderProduct(product, resolvedMaterial);
+
+    return {
+      ...enriched,
+      createdBy: product.createdBy
+        ? {
+            ...product.createdBy,
+            ...formatUserRating(product.createdBy),
+          }
+        : null,
+    };
   }
 
   async getOrderById(orderId: string) {
@@ -681,12 +694,37 @@ class MarketUserService {
     };
 
     const [products, total] = await Promise.all([
-      prisma.product.findMany({ where, skip, take: limit, orderBy: { createdAt: "desc" } }),
+      prisma.product.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: {
+          createdBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              image: true,
+              averageRating: true,
+              ratingCount: true,
+            },
+          },
+        },
+      }),
       prisma.product.count({ where }),
     ]);
 
     return {
-      products,
+      products: products.map((product) => ({
+        ...product,
+        createdBy: product.createdBy
+          ? {
+              ...product.createdBy,
+              ...formatUserRating(product.createdBy),
+            }
+          : null,
+      })),
       meta: {
         currentPage: page,
         pageSize: limit,
@@ -1084,8 +1122,17 @@ class MarketUserService {
             createdAt: true,
             updatedAt: true,
             material: true,
+            userId: true,
             createdBy: {
-              select: { id: true, firstName: true, lastName: true, image: true, phone: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                image: true,
+                phone: true,
+                averageRating: true,
+                ratingCount: true,
+              },
             },
             soldTo: {
               select: { id: true, firstName: true, lastName: true },
@@ -1103,10 +1150,27 @@ class MarketUserService {
     return orders.map((order) => {
       assertOrderProductPresent(order.product, order.id);
       const resolvedMaterial = materialMap.get(order.product.material) ?? null;
+      const seller = order.product.createdBy;
+      const sellerRating = formatUserRating(seller);
+      const enrichedProduct = enrichOrderProduct(order.product, resolvedMaterial);
+      const sellerName = `${seller.firstName} ${seller.lastName}`.trim();
 
       return {
         ...order,
-        product: enrichOrderProduct(order.product, resolvedMaterial),
+        sellerId: seller.id,
+        soldBy: sellerName,
+        createdBy: {
+          ...seller,
+          ...sellerRating,
+        },
+        product: {
+          ...enrichedProduct,
+          userId: seller.id,
+          createdBy: {
+            ...seller,
+            ...sellerRating,
+          },
+        },
       };
     });
   }

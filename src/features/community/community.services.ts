@@ -2,13 +2,32 @@ import prismaClient from "../../infastructure/database/postgreSQL/connect";
 import { AzureBlobService } from "../../shared/services/azure/blobstorage.service";
 
 import { ICommunityCreatePost } from "./community.intercase";
-import { Post, User } from "@prisma/client";
+import { Post, Status, User } from "@prisma/client";
 
 import { v4 } from "uuid";
 import { BlobResponse } from "../../shared/services/azure/blobstorage.model";
 
 export class CommunityService {
   constructor() { }
+
+  private formatPostForFeed(
+    post: Post & {
+      user: { id: string; firstName: string; lastName: string; image: string | null };
+      _count: { comments: number; likes: number; bookmarks: number };
+      likes: { id: string }[];
+      bookmarks: { id: string }[];
+    },
+    forceBookmarked = false
+  ) {
+    return {
+      ...post,
+      isLiked: post.likes.length > 0,
+      isBookmarked: forceBookmarked || post.bookmarks.length > 0,
+      commentsCount: post._count.comments,
+      likesCount: post._count.likes,
+      bookmarkCount: post._count.bookmarks,
+    };
+  }
 
   public async createCommunnityPost(config: {
     user: User;
@@ -114,19 +133,79 @@ export class CommunityService {
     const totalPosts = await prismaClient.post.count(); // Total post count for pagination
 
     return {
-      posts: posts.map((post) => ({
-        ...post,
-        isLiked: post.likes.length > 0,
-        isBookmarked: post.bookmarks.length > 0,
-        commentsCount: post._count.comments,
-        likesCount: post._count.likes,
-        bookmarkCount: post._count.bookmarks,
-      })),
+      posts: posts.map((post) => this.formatPostForFeed(post)),
       meta: {
         currentPage: page,
         pageSize,
         totalPosts,
         totalPages: Math.ceil(totalPosts / pageSize),
+      },
+    };
+  }
+
+  public async getBookmarkedPosts(
+    userId: string,
+    page: number = 1,
+    pageSize: number = 20
+  ) {
+    const skip = (page - 1) * pageSize;
+    const take = pageSize;
+
+    const where = {
+      userId,
+      post: {
+        status: { not: Status.DELETED },
+      },
+    };
+
+    const [bookmarks, totalPosts] = await Promise.all([
+      prismaClient.bookmark.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: "desc" },
+        include: {
+          post: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  image: true,
+                },
+              },
+              _count: {
+                select: {
+                  comments: true,
+                  likes: true,
+                  bookmarks: true,
+                },
+              },
+              likes: {
+                where: { userId },
+                select: { id: true },
+              },
+              bookmarks: {
+                where: { userId },
+                select: { id: true },
+              },
+            },
+          },
+        },
+      }),
+      prismaClient.bookmark.count({ where }),
+    ]);
+
+    return {
+      posts: bookmarks
+        .filter((bookmark) => bookmark.post)
+        .map((bookmark) => this.formatPostForFeed(bookmark.post, true)),
+      meta: {
+        currentPage: page,
+        pageSize,
+        totalPosts,
+        totalPages: Math.ceil(totalPosts / pageSize) || 1,
       },
     };
   }

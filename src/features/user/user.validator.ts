@@ -42,3 +42,13 @@ export const notificationIdParamValidator = {
     }),
   }),
 };
+
+export const submitRatingValidator = {
+  body: Joi.object().keys({
+    targetUserId: Joi.string().uuid().required(),
+    rating: Joi.number().integer().min(1).max(5).required(),
+    review: Joi.string().trim().max(1000).optional().allow(""),
+    contextType: Joi.string().valid("order", "charity").required(),
+    contextId: Joi.string().uuid().required(),
+  }),
+};

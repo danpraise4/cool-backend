@@ -8,6 +8,7 @@ const router = Router();
 
 router.route("/").get(isUserAuthenticated, communityController.getPosts);
 router.route("/").post(isUserAuthenticated, communityController.createPost);
+router.route("/bookmarks").get(isUserAuthenticated, communityController.getBookmarkedPosts);
 router.route("/:id").delete(isUserAuthenticated, communityController.deletePost);
 router.route("/:id").put(isUserAuthenticated, communityController.updatePost);
 router.route("/:id/like").post(isUserAuthenticated, communityController.toggleLike);

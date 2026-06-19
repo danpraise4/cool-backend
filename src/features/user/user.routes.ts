@@ -5,12 +5,17 @@ import validate from "../../infastructure/https/validation/app.validate";
 import {
   getNotificationsQueryValidator,
   notificationIdParamValidator,
+  submitRatingValidator,
   updateUserValidator,
   uploadImageValidator,
 } from "./user.validator";
 import { updateDeviceValidator, updateSettingsValidator } from "../authentication/validators/auth.validator";
 
 const router = Router();
+
+router
+  .route("/ratings")
+  .post(isUserAuthenticated, validate(submitRatingValidator), userController.submitRating);
 
 router
   .route("/")

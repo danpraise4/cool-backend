@@ -494,22 +494,23 @@ export class RecycleService {
     userId: string,
     timeRange?: { start?: Date; end?: Date }
   ) {
-    const where: any = {
+    const where: {
+      userId: string;
+      status: { in: RecycleScheduleStatus[] };
+      updatedAt?: { gte?: Date; lte?: Date };
+    } = {
       userId,
       status: {
-        in: [
-          RecycleScheduleStatus.COMPLETED,
-          RecycleScheduleStatus.IN_PROGRESS,
-          RecycleScheduleStatus.PENDING,
-        ],
+        in: [RecycleScheduleStatus.COMPLETED],
       },
-      ...(timeRange && {
-        createdAt: {
-          ...(timeRange.start && { gte: timeRange.start }),
-          ...(timeRange.end && { lte: timeRange.end }),
-        },
-      }),
     };
+
+    if (timeRange?.start || timeRange?.end) {
+      where.updatedAt = {
+        ...(timeRange.start && { gte: timeRange.start }),
+        ...(timeRange.end && { lte: timeRange.end }),
+      };
+    }
 
     const recyclingByMaterial = await prismaClient.recycleSchedule.groupBy({
       by: ["material"],

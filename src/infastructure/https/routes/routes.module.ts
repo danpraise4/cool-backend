@@ -10,6 +10,7 @@ import authAdminRoutes from "../../../features/authentication/routes/auth.admin.
 import facilitiesRoutes from "../../../features/facilities/facilities.routes";
 import recycleRoutes from "../../../features/recycle/recycle.routes";
 import devRoutes from "../../../features/dev/dev.routes";
+import supportRoutes from "../../../features/support/support.routes";
 const router = Router();
 
 const defaultRoutes = [
@@ -23,6 +24,7 @@ const defaultRoutes = [
   { path: "/community", route: communityRoutes },
   { path: "/facilities", route: facilitiesRoutes },
   { path: "/recycle", route: recycleRoutes },
+  { path: "/support", route: supportRoutes },
   { path: "/dev", route: devRoutes },
 ];
 

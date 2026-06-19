@@ -26,8 +26,15 @@ export class UserService {
       where: { id },
     });
 
-    delete user?.password;
-    return user;
+    if (!user) {
+      return null;
+    }
+
+    const { password, ...safeUser } = user;
+    return {
+      ...safeUser,
+      rating: Number((user.averageRating ?? 0).toFixed(1)),
+    };
   }
 
   public async getUserByEmail(email: string) {
