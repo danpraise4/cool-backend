@@ -859,7 +859,10 @@ export class WalletService {
 
   public async getTransactions(userId: string) {
     return prisma.transaction.findMany({
-      where: { userId },
+      where: {
+        userId,
+        status: { not: Status.PENDING },
+      },
       orderBy: { createdAt: "desc" },
     });
   }

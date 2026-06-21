@@ -13,7 +13,15 @@ import {
   EmailNotificationType,
 } from "../../shared/services/email/email-notification.service";
 import { notificationService } from "../../shared/services/notification/notification.service";
-import { mapPublicFacility, mapPublicMaterial, buildUserRecyclingAnalyticsRows, mapCompletedScheduleRow, filterAnalyticsRowsForMobile } from "./recycle.public.utils";
+import {
+  buildUserRecyclingAnalyticsRows,
+  filterAnalyticsRowsForMobile,
+  filterSchedulesForAnalyticsYear,
+  groupCompletedSchedulesByMaterial,
+  mapCompletedScheduleRow,
+  mapPublicFacility,
+  mapPublicMaterial,
+} from "./recycle.public.utils";
 
 export class RecycleService {
   private readonly adminClient: AdminService;
@@ -457,22 +465,22 @@ export class RecycleService {
     }
   }
 
-  public async getCompletedRecycleSchedules(config: { userId: string }) {
+  public async getCompletedRecycleSchedules(config: {
+    userId: string;
+    year?: number;
+  }) {
     const schedules = await prismaClient.recycleSchedule.findMany({
-      where: { userId: config.userId, 
-        status: {
-          in: [
-            RecycleScheduleStatus.COMPLETED,
-            RecycleScheduleStatus.IN_PROGRESS,
-            RecycleScheduleStatus.PENDING,
-          ],
-        },
+      where: {
+        userId: config.userId,
+        status: RecycleScheduleStatus.COMPLETED,
       },
       orderBy: { updatedAt: "desc" },
     });
 
+    const filteredSchedules = filterSchedulesForAnalyticsYear(schedules, config.year);
+
     return Promise.all(
-      schedules.map(async (schedule) =>
+      filteredSchedules.map(async (schedule) =>
         mapCompletedScheduleRow({
           id: schedule.id,
           status: schedule.status,
@@ -490,33 +498,22 @@ export class RecycleService {
     );
   }
 
-  public async getUserRecyclingAnalytics(
-    userId: string,
-    timeRange?: { start?: Date; end?: Date }
-  ) {
-    const where: {
-      userId: string;
-      status: { in: RecycleScheduleStatus[] };
-      updatedAt?: { gte?: Date; lte?: Date };
-    } = {
-      userId,
-      status: {
-        in: [RecycleScheduleStatus.COMPLETED],
+  public async getUserRecyclingAnalytics(userId: string, year?: number) {
+    const completedSchedules = await prismaClient.recycleSchedule.findMany({
+      where: {
+        userId,
+        status: { in: [RecycleScheduleStatus.COMPLETED, RecycleScheduleStatus.IN_PROGRESS, RecycleScheduleStatus.PENDING] },
       },
-    };
-
-    if (timeRange?.start || timeRange?.end) {
-      where.updatedAt = {
-        ...(timeRange.start && { gte: timeRange.start }),
-        ...(timeRange.end && { lte: timeRange.end }),
-      };
-    }
-
-    const recyclingByMaterial = await prismaClient.recycleSchedule.groupBy({
-      by: ["material"],
-      where,
-      _count: { id: true },
+      select: {
+        material: true,
+        updatedAt: true,
+        dates: true,
+      },
     });
+
+    const filteredSchedules = filterSchedulesForAnalyticsYear(completedSchedules, year);
+
+    const recyclingByMaterial = groupCompletedSchedulesByMaterial(filteredSchedules);
 
     let allMaterials: IMaterialData[] = [];
     try {

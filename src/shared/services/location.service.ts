@@ -35,8 +35,11 @@ export default class LocationService {
       `https://maps.googleapis.com/maps/api/geocode/json?latlng=${body.lat},${body.long}&key=${config.GOOGLE.API_KEY}`
     );
 
-    const addressComponents = geocodeRes.data.results[0]?.address_components ?? [];
-    const country = addressComponents.find((c) => c.types.includes("country"));
+    const addressComponents: GoogleAddressComponent[] =
+      geocodeRes.data.results[0]?.address_components ?? [];
+    const country = addressComponents.find((c: GoogleAddressComponent) =>
+      c.types.includes("country")
+    );
 
     if (!country) {
       throw new Error("Could not determine country from coordinates");
@@ -48,7 +51,7 @@ export default class LocationService {
 
     const result = {
       country: country.long_name,
-      cities: citiesRes.data.results.map((city) => ({
+      cities: citiesRes.data.results.map((city: GooglePlaceResult) => ({
         name: city.name,
         location: city.geometry.location,
       })),

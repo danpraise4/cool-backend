@@ -4,7 +4,7 @@ import AppException from "../../infastructure/https/exception/app.exception";
 import httpStatus from "http-status";
 import logger from "../../shared/services/logger";
 
-const ADMIN_EMAIL = "admin@recycool.app";
+const ADMIN_EMAIL = "admin@apprecycool.com";
 
 export type SupportContactInput = {
   userId: string;

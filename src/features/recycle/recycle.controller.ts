@@ -2,7 +2,10 @@ import { NextFunction, Response } from "express";
 import StatusCodes from "http-status";
 import { RequestType } from "../../shared/helper/helper";
 import { RecycleService } from "./recycle.services";
-import { resolveRecycleTargetUserId } from "./recycle.public.utils";
+import {
+  parseAnalyticsYearQuery,
+  resolveRecycleTargetUserId,
+} from "./recycle.public.utils";
 
 export class RecycleController {
   constructor(private readonly recycleService: RecycleService) {}
@@ -146,38 +149,23 @@ export class RecycleController {
   };
 
   public getUserRecyclingAnalytics = async (req: RequestType, res: Response, next: NextFunction) => {
-    const { start, end, year } = req.query;
     try {
-      const targetUserId = await resolveRecycleTargetUserId(req);
-
-      let timeRange: { start?: Date; end?: Date } | undefined;
-      if (year) {
-        const yearNum = Number(year);
-        if (!Number.isInteger(yearNum) || yearNum < 2000 || yearNum > 2100) {
-          res.status(StatusCodes.BAD_REQUEST).json({
-            status: "error",
-            message: "Invalid year parameter",
-          });
-          return;
-        }
-        timeRange = {
-          start: new Date(Date.UTC(yearNum, 0, 1, 0, 0, 0, 0)),
-          end: new Date(Date.UTC(yearNum, 11, 31, 23, 59, 59, 999)),
-        };
-      } else if (start || end) {
-        timeRange = {
-          start: start ? new Date(start as string) : undefined,
-          end: end ? new Date(end as string) : undefined,
-        };
+      const yearResult = parseAnalyticsYearQuery(req.query.year);
+      if (yearResult.ok === false) {
+        res.status(StatusCodes.BAD_REQUEST).json({
+          message: yearResult.message,
+        });
+        return;
       }
 
+      const targetUserId = await resolveRecycleTargetUserId(req);
       const userAnalytics = await this.recycleService.getUserRecyclingAnalytics(
         targetUserId,
-        timeRange
+        yearResult.year
       );
       res.status(StatusCodes.OK).json({
         status: "success",
-        message: "User recycling analytics fetched successfully",
+        message: "Analytics retrieved",
         data: userAnalytics,
       });
     } catch (error) {
@@ -187,9 +175,20 @@ export class RecycleController {
 
   public getCompletedRecycleSchedules = async (req: RequestType, res: Response, next: NextFunction) => {
     try {
+      const yearResult = parseAnalyticsYearQuery(req.query.year);
+      if (yearResult.ok === false) {
+        res.status(StatusCodes.BAD_REQUEST).json({
+          message: yearResult.message,
+        });
+        return;
+      }
+
       const targetUserId = await resolveRecycleTargetUserId(req);
       const completedRecycleSchedules =
-        await this.recycleService.getCompletedRecycleSchedules({ userId: targetUserId });
+        await this.recycleService.getCompletedRecycleSchedules({
+          userId: targetUserId,
+          year: yearResult.year,
+        });
       res.status(StatusCodes.OK).json({
         status: "success",
         message: "Completed recycle schedules fetched successfully",

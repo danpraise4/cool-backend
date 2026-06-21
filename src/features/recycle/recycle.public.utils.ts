@@ -73,6 +73,78 @@ export function mapPublicMaterial(
   };
 }
 
+export type RecycleScheduleEventDateInput = {
+  completedAt?: Date | string | null;
+  confirmedAt?: Date | string | null;
+  dates?: Date[];
+  updatedAt: Date | string;
+};
+
+/** Event date for analytics — UTC calendar year is derived from this value. */
+export function getScheduleEventDate(schedule: RecycleScheduleEventDateInput): Date {
+  if (schedule.completedAt) {
+    return new Date(schedule.completedAt);
+  }
+
+  if (schedule.confirmedAt) {
+    return new Date(schedule.confirmedAt);
+  }
+
+  if (schedule.dates?.[0]) {
+    return new Date(schedule.dates[0]);
+  }
+
+  return new Date(schedule.updatedAt);
+}
+
+export function scheduleMatchesAnalyticsYear(
+  schedule: RecycleScheduleEventDateInput,
+  year: number
+): boolean {
+  return getScheduleEventDate(schedule).getUTCFullYear() === year;
+}
+
+export function parseAnalyticsYearQuery(
+  year: unknown
+): { ok: true; year?: number } | { ok: false; message: string } {
+  if (year === undefined || year === null || year === "") {
+    return { ok: true, year: undefined };
+  }
+
+  const rawYear = Array.isArray(year) ? year[0] : year;
+  const yearNum = Number(rawYear);
+  if (!Number.isInteger(yearNum) || yearNum < 2000 || yearNum > 2100) {
+    return { ok: false, message: "Invalid year" };
+  }
+
+  return { ok: true, year: yearNum };
+}
+
+export function filterSchedulesForAnalyticsYear<T extends RecycleScheduleEventDateInput>(
+  schedules: T[],
+  year?: number
+): T[] {
+  if (year === undefined) {
+    return schedules;
+  }
+
+  return schedules.filter((schedule) => scheduleMatchesAnalyticsYear(schedule, year));
+}
+
+export function groupCompletedSchedulesByMaterial(
+  schedules: { material: string }[]
+): { material: string; _count: { id: number } }[] {
+  const counts = new Map<string, number>();
+  for (const schedule of schedules) {
+    counts.set(schedule.material, (counts.get(schedule.material) ?? 0) + 1);
+  }
+
+  return [...counts.entries()].map(([material, count]) => ({
+    material,
+    _count: { id: count },
+  }));
+}
+
 export function resolveAnalyticsMaterialLabel(row: {
   materialTitle?: string;
   material?: { title?: string; category?: string };
