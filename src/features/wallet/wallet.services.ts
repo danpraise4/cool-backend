@@ -213,6 +213,13 @@ export class WalletService {
       (data.reference as string | undefined) ||
       (data.tx_ref as string | undefined);
 
+    console.log("reference", reference);
+    console.log("data", data);
+    /// call admin but dont lets response  spoil anything
+    this.adminClient.confirmRecycleTransaction(reference, data).catch((err: unknown) => {
+      logger.error({ err }, "Failed to confirm recycle transaction");
+    });
+
     if (!reference) {
       logger.warn({ data }, "transfer.completed webhook missing reference");
       return { message: "No reference" };
@@ -238,6 +245,9 @@ export class WalletService {
         } as object,
       },
     });
+
+
+
   }
 
   private async handleTransferFailed(data: Record<string, unknown>) {
