@@ -131,12 +131,12 @@ export default class AdminService extends AdminServiceUtil {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async confirmRecycleTransaction(id: string, request: any): Promise<AdminServiceBaseResponse<any>> {
+  async confirmRecycleTransaction(request: any): Promise<AdminServiceBaseResponse<any>> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response = await this.postRequest<any, AdminServiceBaseResponse<any>>(
       this.buildHeader(),
       request,
-      endpoints.CONFIRM_RECYCLE_TRANSACTION(id)
+      endpoints.CONFIRM_RECYCLE_TRANSACTION
     );
 
     if (!response.isOk) throw new Error(response.message);
