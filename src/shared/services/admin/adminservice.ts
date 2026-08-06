@@ -142,6 +142,18 @@ export default class AdminService extends AdminServiceUtil {
     if (!response.isOk) throw new Error(response.message);
     return response;
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async confirmTopUpTransaction(request: any): Promise<AdminServiceBaseResponse<any>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const response = await this.postRequest<any, AdminServiceBaseResponse<any>>(
+      this.buildHeader(),
+      request,
+      endpoints.CONFIRM_DEPOSIT_TRANSACTION
+    );
+
+    if (!response.isOk) throw new Error(response.message);
+    return response;
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async getRecycleRequestById(config: { recyclerId: string; transactionId: string }): Promise<AdminServiceBaseResponse<any>> {

@@ -15,6 +15,7 @@ const endpoints = Object.freeze({
   CREATE_RECYCLE_REQUEST: `/recyclers/recycle`,
   PATCH_RECYCLE_REQUEST: (id: string): string => `/recyclers/transaction/${id}`,
   CONFIRM_RECYCLE_TRANSACTION: `/payment/process-withdrawal`,
+  CONFIRM_DEPOSIT_TRANSACTION: `/payment/process-deposit`,
   // GET_RECYCLE_REQUEST_BY_ID: (config: {recyclerId: string, transactionId: string}): string => '',
 });
 

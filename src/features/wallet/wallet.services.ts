@@ -125,7 +125,7 @@ export class WalletService {
     };
 
     // Confirm recycle transaction in background — failure must not block wallet credit
-    this.adminClient.confirmRecycleTransaction(data).catch((err: unknown) => {
+    this.adminClient.confirmTopUpTransaction(data).catch((err: unknown) => {
       logger.error({ err }, "Failed to confirm recycle transaction");
     });
 
@@ -213,8 +213,6 @@ export class WalletService {
       (data.reference as string | undefined) ||
       (data.tx_ref as string | undefined);
 
-    console.log("reference", reference);
-    console.log("data", data);
     /// call admin but dont lets response  spoil anything
     this.adminClient.confirmRecycleTransaction(data).catch((err: unknown) => {
       logger.error({ err }, "Failed to confirm recycle transaction");
